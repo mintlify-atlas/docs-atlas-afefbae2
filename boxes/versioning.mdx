@@ -1,0 +1,210 @@
+---
+title: "Vagrant Box Versioning: Constraints and Updates"
+description: "Learn how Vagrant box versioning works, how to pin boxes to specific versions in the Vagrantfile, and how to check for and apply box updates."
+---
+
+Vagrant boxes support versioning, which lets box publishers push updates while giving you control over which version your environment uses. If you work on a team or maintain your own boxes, versioning ensures that everyone runs the same known-good image and that updates are applied deliberately rather than automatically. This page covers how to use box versions and version constraints in your Vagrantfile.
+
+<Note>
+  This page covers consuming versioned boxes. To learn how to publish box versions, see the base box creation documentation.
+</Note>
+
+## How box versions work
+
+Each box on Vagrant Cloud can have multiple published versions following the `X.Y.Z` format, where `X`, `Y`, and `Z` are positive integers. Vagrant stores each version separately on your local system, so you can have multiple versions of the same box installed simultaneously.
+
+By default, Vagrant uses the latest available version of a box. You can restrict this with the `config.vm.box_version` setting in your Vagrantfile.
+
+## Version constraints
+
+Set `config.vm.box_version` to a constraint expression. The default is `">= 0"`, which always resolves to the latest version.
+
+### Constraint operators
+
+| Operator | Meaning |
+|---|---|
+| `= X` | Exactly version X |
+| `> X` | Any version greater than X |
+| `< X` | Any version less than X |
+| `>= X` | Version X or later |
+| `<= X` | Version X or earlier |
+| `~> X` | Pessimistic constraint (see below) |
+
+Combine multiple constraints with commas. Vagrant selects the latest installed version that satisfies all constraints.
+
+### The pessimistic constraint (`~>`)
+
+The `~>` operator is the most useful constraint for real-world use because it allows patch and minor updates while preventing major version jumps that could break your environment.
+
+```
+~> 1.0     is equivalent to  >= 1.0, < 2.0
+~> 1.1.5   is equivalent to  >= 1.1.5, < 1.2.0
+```
+
+Most boxes on Vagrant Cloud follow [semantic versioning](https://semver.org/): only a major version bump signals breaking changes. Using `~> 1.0` lets you receive all `1.x` updates safely.
+
+### Constraint examples
+
+<Tabs>
+  <Tab title="Exact version">
+    Pin to a specific release — useful for reproducible CI environments:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box         = "hashicorp/bionic64"
+      config.vm.box_version = "= 1.0.282"
+    end
+    ```
+  </Tab>
+  <Tab title="Pessimistic (recommended)">
+    Allow any `1.x` release but block `2.0` and above:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box         = "hashicorp/bionic64"
+      config.vm.box_version = "~> 1.0"
+    end
+    ```
+  </Tab>
+  <Tab title="Range constraint">
+    Accept any version from `1.0` up to (but not including) `1.5`:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box         = "hashicorp/bionic64"
+      config.vm.box_version = ">= 1.0, < 1.5"
+    end
+    ```
+  </Tab>
+  <Tab title="Minimum version">
+    Require at least version `1.2.0`, with no upper bound:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box         = "hashicorp/bionic64"
+      config.vm.box_version = ">= 1.2.0"
+    end
+    ```
+  </Tab>
+</Tabs>
+
+## Viewing available versions
+
+`vagrant box list` shows only the versions you have installed locally. To see all versions available for a box on Vagrant Cloud, visit:
+
+```
+https://vagrantcloud.com/<namespace>/<box-name>
+```
+
+For example, for `hashicorp/bionic64`:
+
+```
+https://vagrantcloud.com/hashicorp/bionic64
+```
+
+## Checking for updates
+
+Vagrant can check whether a newer version of your box is available compared to what is installed.
+
+**Check the current environment's box:**
+
+```bash
+vagrant box outdated
+```
+
+**Check all boxes installed on the system:**
+
+```bash
+vagrant box outdated --global
+```
+
+You can also configure Vagrant to check automatically on every `vagrant up`. This is enabled by default but can be disabled:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box              = "hashicorp/bionic64"
+  config.vm.box_check_update = false
+end
+```
+
+When automatic checking is enabled and an update is found, Vagrant displays a notice but does not download or apply the update automatically. You must run `vagrant box update` explicitly.
+
+<Info>
+  Update checking runs on every `vagrant up`, not only when creating a machine for the first time. It also runs when resuming a halted machine.
+</Info>
+
+## Updating a box
+
+Download the latest version of a box that satisfies your constraints:
+
+```bash
+vagrant box update
+```
+
+Update a specific box by name:
+
+```bash
+vagrant box update --box hashicorp/bionic64
+```
+
+<Warning>
+  Updating a box does not modify a running Vagrant environment. To use the new version, you must destroy and recreate the machine:
+
+  ```bash
+  vagrant destroy
+  vagrant up
+  ```
+
+  Make sure any data you need is stored in a synced folder or otherwise backed up before destroying the machine.
+</Warning>
+
+## Removing old versions
+
+Vagrant keeps old box versions on disk even after newer ones are installed. Use `vagrant box prune` to remove versions that are not in use:
+
+```bash
+vagrant box prune
+```
+
+Remove a specific version of a box manually:
+
+```bash
+vagrant box remove hashicorp/bionic64 --box-version 1.0.282
+```
+
+List all installed boxes and their versions to see what can be pruned:
+
+```bash
+vagrant box list
+```
+
+## Box metadata format
+
+Versioned boxes on Vagrant Cloud include a metadata JSON file that describes available versions and their download URLs. When you run `vagrant box add` with a box name, Vagrant fetches this metadata to resolve the correct version. The metadata structure looks like:
+
+```json
+{
+  "name": "hashicorp/bionic64",
+  "versions": [
+    {
+      "version": "1.0.282",
+      "providers": [
+        {
+          "name": "virtualbox",
+          "url": "https://vagrantcloud.com/hashicorp/boxes/bionic64/versions/1.0.282/providers/virtualbox.box"
+        }
+      ]
+    }
+  ]
+}
+```
+
+You can host your own metadata file to distribute private versioned boxes without using Vagrant Cloud. Point `config.vm.box_url` to your metadata JSON file's URL and Vagrant will resolve versions the same way.
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box         = "my-org/internal-box"
+  config.vm.box_url     = "https://boxes.internal.example.com/my-box.json"
+  config.vm.box_version = "~> 2.0"
+end
+```

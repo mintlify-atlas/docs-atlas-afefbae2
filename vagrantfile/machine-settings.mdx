@@ -1,0 +1,332 @@
+---
+title: "config.vm Machine Settings Reference for Vagrant"
+description: "Complete reference for all config.vm settings in the Vagrantfile, covering boxes, networking, synced folders, provisioning, and machine behavior."
+---
+
+The `config.vm` namespace in the Vagrantfile controls every aspect of the virtual machine that Vagrant manages. Settings in this namespace define which box to use, how the machine behaves at boot and shutdown, how the host and guest share files, and how Vagrant provisions the machine after it starts. This page documents every available `config.vm.*` setting.
+
+## Box settings
+
+<AccordionGroup>
+  <Accordion title="config.vm.box">
+    **Type:** string
+
+    The box that the machine will be brought up against. The value should be the name of an installed box or a shorthand name of a box on [Vagrant Cloud](https://vagrantcloud.com/boxes/search).
+
+    ```ruby
+    config.vm.box = "hashicorp/bionic64"
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.box_architecture">
+    **Type:** string | **Default:** `:auto`
+
+    The CPU architecture of the box to use. Supported values: `"i386"`, `"amd64"`, `"arm"`, `"arm64"`, `"ppc64le"`, `"ppc64"`, `"mips64le"`, `"mips64"`, `"mipsle"`, `"mips"`, `"s390x"`.
+
+    Use `:auto` to detect the host architecture and fetch the matching box. Use `nil` to fetch the box flagged as the default architecture.
+  </Accordion>
+
+  <Accordion title="config.vm.box_check_update">
+    **Type:** boolean | **Default:** `true`
+
+    When `true`, Vagrant checks for box updates on every `vagrant up` and notifies you if a newer version is available. Update checking only applies to versioned boxes (such as those from Vagrant Cloud).
+
+    ```ruby
+    config.vm.box_check_update = false
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.box_url">
+    **Type:** string or array of strings
+
+    The URL where Vagrant can download the box if it is not already installed. Accepts `http://`, `https://`, or `file://` schemes. Provide an array to try multiple sources in order.
+
+    ```ruby
+    config.vm.box_url = "https://example.com/boxes/mybox.box"
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.box_version">
+    **Type:** string | **Default:** `">= 0"` (latest)
+
+    The version or version constraint for the box. Accepts constraints separated by commas: `=`, `>`, `<`, `>=`, `<=`, `~>`.
+
+    ```ruby
+    config.vm.box_version = "~> 1.0"
+    config.vm.box_version = ">= 1.0, < 2.0"
+    ```
+
+    See [box versioning](/boxes/versioning) for details on constraint syntax.
+  </Accordion>
+
+  <Accordion title="config.vm.ignore_box_vagrantfile">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, Vagrant ignores the Vagrantfile bundled inside the box. Use this to prevent box-level defaults from affecting your project.
+  </Accordion>
+</AccordionGroup>
+
+## Box download settings
+
+<AccordionGroup>
+  <Accordion title="config.vm.box_download_checksum">
+    **Type:** string
+
+    The expected checksum of the downloaded box file. Vagrant compares this value to the checksum of the downloaded file and errors if they don't match. Requires `config.vm.box_download_checksum_type` to also be set.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_checksum_type">
+    **Type:** string
+
+    The algorithm for the checksum specified in `config.vm.box_download_checksum`. Supported values: `"md5"`, `"sha1"`, `"sha256"`, `"sha384"`, `"sha512"`.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_client_cert">
+    **Type:** string
+
+    Path to a client certificate to present when downloading the box. By default no client certificate is used.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_ca_cert">
+    **Type:** string
+
+    Path to a CA certificate bundle to use when downloading a box. Defaults to the Mozilla CA bundle.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_ca_path">
+    **Type:** string
+
+    Path to a directory of CA certificates to use when downloading a box. Defaults to the Mozilla CA bundle.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_insecure">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, SSL certificates from the download server are not verified. Use only in controlled environments.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_location_trusted">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, all HTTP redirects are treated as trusted and any credentials provided for the initial request are forwarded to redirect targets.
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_options">
+    **Type:** map
+
+    Extra options passed directly to the `curl` downloader. Keys are long-form `curl` flag names (use `append` not `a`). Set a flag with no value to `true`.
+
+    ```ruby
+    config.vm.box_download_options = { "key" => "/path/to/key", "fail" => true }
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.box_download_disable_ssl_revoke_best_effort">
+    **Type:** boolean | **Default:** `false`
+
+    Windows only. When `true`, an error during certificate revocation checking halts the request rather than continuing on a best-effort basis.
+  </Accordion>
+</AccordionGroup>
+
+## Machine identity and behavior
+
+<AccordionGroup>
+  <Accordion title="config.vm.hostname">
+    **Type:** string | **Default:** `nil`
+
+    The hostname to set on the guest machine. When set, Vagrant updates `/etc/hosts` on the guest with this hostname. When `nil`, Vagrant does not manage the hostname.
+
+    ```ruby
+    config.vm.hostname = "my-dev-box"
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.guest">
+    **Type:** string or symbol | **Default:** `:linux`
+
+    The guest operating system type. Vagrant uses this to perform OS-specific tasks such as mounting folders and configuring networks. Set to `:windows` for Windows guests.
+
+    ```ruby
+    config.vm.guest = :windows
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.communicator">
+    **Type:** string | **Default:** `"ssh"`
+
+    The communicator used to connect to the guest. Use `"winrm"` for Windows guests that do not have an SSH server.
+
+    ```ruby
+    config.vm.communicator = "winrm"
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.boot_timeout">
+    **Type:** integer | **Default:** `300`
+
+    Seconds Vagrant waits for the machine to boot and become accessible before timing out.
+
+    ```ruby
+    config.vm.boot_timeout = 600
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.graceful_halt_timeout">
+    **Type:** integer | **Default:** `60`
+
+    Seconds Vagrant waits for the machine to shut down gracefully during `vagrant halt` before forcing a power-off.
+  </Accordion>
+
+  <Accordion title="config.vm.post_up_message">
+    **Type:** string
+
+    A message displayed to the user after `vagrant up` completes. Useful for access instructions or environment notes.
+
+    ```ruby
+    config.vm.post_up_message = "App running at http://localhost:8080"
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.base_mac">
+    **Type:** string
+
+    The MAC address assigned to the default NAT network interface on the guest. Provider support varies.
+  </Accordion>
+
+  <Accordion title="config.vm.base_address">
+    **Type:** string
+
+    The IP address assigned to the default NAT network interface on the guest. Provider support varies.
+  </Accordion>
+</AccordionGroup>
+
+## Networking, folders, and provisioning
+
+<AccordionGroup>
+  <Accordion title="config.vm.network">
+    Configures a network on the machine. Multiple calls add multiple networks. Common network types are `"forwarded_port"`, `"private_network"`, and `"public_network"`.
+
+    ```ruby
+    config.vm.network "forwarded_port", guest: 80, host: 8080
+    config.vm.network "private_network", ip: "192.168.56.10"
+    ```
+
+    See the networking documentation for the full list of options per network type.
+  </Accordion>
+
+  <Accordion title="config.vm.synced_folder">
+    Configures a synced folder between the host and the guest. Multiple calls add multiple synced folders.
+
+    ```ruby
+    config.vm.synced_folder "./src", "/var/www/app"
+    config.vm.synced_folder "./data", "/data", type: "nfs"
+    ```
+
+    See the synced folders documentation for available types and options.
+  </Accordion>
+
+  <Accordion title="config.vm.provision">
+    Configures a provisioner to install and configure software when the machine is created. Multiple provisioners run in order.
+
+    ```ruby
+    config.vm.provision "shell", inline: "apt-get install -y nginx"
+    config.vm.provision "ansible", playbook: "playbook.yml"
+    ```
+
+    See the provisioning documentation for all available provisioners.
+  </Accordion>
+
+  <Accordion title="config.vm.provider">
+    Configures provider-specific settings. The block is ignored if the specified provider is not installed, making it safe to share Vagrantfiles that target multiple providers.
+
+    ```ruby
+    config.vm.provider "virtualbox" do |vb|
+      vb.memory = 2048
+      vb.cpus   = 2
+    end
+    ```
+  </Accordion>
+
+  <Accordion title="config.vm.usable_port_range">
+    **Type:** range | **Default:** `2200..2250`
+
+    The range of ports Vagrant may use for automatic port collision resolution.
+
+    ```ruby
+    config.vm.usable_port_range = 2200..2300
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Synced folder access control
+
+<AccordionGroup>
+  <Accordion title="config.vm.allow_fstab_modification">
+    **Type:** boolean | **Default:** `true`
+
+    When `false`, Vagrant does not add entries to `/etc/fstab` for synced folders. This may prevent folders from mounting automatically after a reboot.
+  </Accordion>
+
+  <Accordion title="config.vm.allow_hosts_modification">
+    **Type:** boolean | **Default:** `true`
+
+    When `false`, Vagrant does not write to `/etc/hosts` on the guest.
+  </Accordion>
+
+  <Accordion title="config.vm.allowed_synced_folder_types">
+    **Type:** array of strings
+
+    Restricts which synced folder plugins Vagrant may choose from when auto-selecting a type. Elements should be plugin names.
+
+    ```ruby
+    config.vm.allowed_synced_folder_types = ["virtualbox", "rsync"]
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Cloud-init and disk settings
+
+<AccordionGroup>
+  <Accordion title="config.vm.cloud_init">
+    Stores cloud-init configuration for the machine. See the cloud-init documentation for full options.
+  </Accordion>
+
+  <Accordion title="config.vm.cloud_init_first_boot_only">
+    **Type:** boolean | **Default:** `true`
+
+    When `true`, Vagrant generates and attaches the cloud-init configuration only on the first successful boot. Subsequent boots skip cloud-init generation and the `cloud-init wait` command.
+  </Accordion>
+
+  <Accordion title="config.vm.disk">
+    Stores virtual disk configuration for the machine. See the disks documentation for full options.
+  </Accordion>
+</AccordionGroup>
+
+## Complete example
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box          = "hashicorp/bionic64"
+  config.vm.box_version  = "~> 1.0"
+  config.vm.hostname     = "web-dev"
+  config.vm.boot_timeout = 600
+
+  config.vm.network "forwarded_port", guest: 80,   host: 8080
+  config.vm.network "forwarded_port", guest: 3306, host: 33060
+  config.vm.network "private_network", ip: "192.168.56.10"
+
+  config.vm.synced_folder "./app", "/var/www/app"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus   = 2
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y nginx mysql-server
+  SHELL
+
+  config.vm.post_up_message = "Site available at http://localhost:8080"
+end
+```

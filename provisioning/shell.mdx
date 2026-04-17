@@ -1,0 +1,215 @@
+---
+title: "Using shell scripts to provision Vagrant machines"
+description: "The Vagrant shell provisioner runs inline commands or uploads and executes scripts on the guest, with support for args, env vars, privileged mode, and reboot."
+---
+
+The Vagrant shell provisioner (`"shell"`) is the most direct way to configure a guest machine. It uploads and executes a script via SSH on POSIX guests, or via WinRM on Windows guests running PowerShell or Batch. Because it requires no external tooling, it is the recommended starting point for users who are new to Vagrant or who prefer not to use a full configuration management system.
+
+## Inline scripts
+
+The simplest usage is an inline command passed directly in the `Vagrantfile`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "echo Hello, World"
+end
+```
+
+For multi-line scripts, use a Ruby heredoc assigned to a variable:
+
+```ruby
+$script = <<-SCRIPT
+echo I am provisioning...
+date > /etc/vagrant_provisioned_at
+SCRIPT
+
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: $script
+end
+```
+
+If your script contains quotes and you do not want Ruby to interpolate them, quote the heredoc delimiter:
+
+```ruby
+$script = <<-'SCRIPT'
+echo "These are my \"quotes\"!"
+SCRIPT
+
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: $script
+end
+```
+
+<Tip>
+Quoting the heredoc delimiter with single quotes (`<<-'SCRIPT'`) prevents Ruby from interpreting `#{}` and backslash sequences inside the script.
+</Tip>
+
+## External scripts
+
+Point the provisioner at a script file on the host and Vagrant will upload and run it on the guest:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", path: "scripts/setup.sh"
+end
+```
+
+Relative paths are resolved from the directory containing the `Vagrantfile`. You can also use absolute paths or `~` for the home directory.
+
+Remote URLs are supported too:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", path: "https://example.com/provision.sh"
+end
+```
+
+For Windows guests, include the correct file extension (`.bat` or `.ps1`) so the OS knows which interpreter to use:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", path: "scripts/Configure.ps1"
+end
+```
+
+To run a script that is already present on the guest, use `inline` to invoke it directly:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell",
+    inline: "/bin/sh /path/on/guest/setup.sh"
+end
+```
+
+## Script arguments
+
+Pass arguments to a script using the `args` option. Provide them as a string (you handle quoting) or as an array (Vagrant handles quoting):
+
+```ruby
+# String form — you handle quoting
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell" do |s|
+    s.inline = "echo $1"
+    s.args   = "'hello, world!'"
+  end
+end
+```
+
+```ruby
+# Array form — Vagrant handles quoting
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell" do |s|
+    s.inline = "echo $1"
+    s.args   = ["hello, world!"]
+  end
+end
+```
+
+## Environment variables
+
+Pass key-value pairs as environment variables using `env`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell" do |s|
+    s.inline = "echo $APP_ENV"
+    s.env    = { "APP_ENV" => "production" }
+  end
+end
+```
+
+Set `sensitive: true` to prevent environment variable values from appearing in Vagrant output:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell" do |s|
+    s.inline    = "echo $DB_PASSWORD"
+    s.env       = { "DB_PASSWORD" => "s3cr3t" }
+    s.sensitive = true
+  end
+end
+```
+
+## All options
+
+<AccordionGroup>
+  <Accordion title="Required options">
+    One of `inline` or `path` must be provided (unless using `reset` or `reboot`).
+
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `inline` | string | Shell command or script to execute directly on the guest. |
+    | `path` | string | Path to a local script file or remote URL to upload and execute. |
+  </Accordion>
+
+  <Accordion title="Script behaviour">
+    | Option | Type | Default | Description |
+    |--------|------|---------|-------------|
+    | `args` | string or array | `nil` | Arguments passed to the script on the command line. |
+    | `env` | hash | `{}` | Environment variables made available to the script. |
+    | `privileged` | boolean | `true` | Run the script with `sudo`. On Windows, uses a scheduled task. |
+    | `upload_path` | string | `/tmp/vagrant-shell` | Remote path where the script is uploaded before execution. |
+    | `binary` | boolean | `false` | Skip Windows line-ending conversion. Defaults to `true` over WinRM. |
+    | `keep_color` | boolean | `false` | Preserve the script's native output colours instead of applying Vagrant's stdout/stderr colouring. |
+    | `sensitive` | boolean | `false` | Mask `env` values in Vagrant output. |
+  </Accordion>
+
+  <Accordion title="Reset and reboot">
+    | Option | Type | Default | Description |
+    |--------|------|---------|-------------|
+    | `reset` | boolean | `false` | Reconnect the communicator after the script completes. Useful when the script modifies the shell. |
+    | `reboot` | boolean | `false` | Reboot the guest after the script completes. Requires the guest to have a reboot capability. |
+  </Accordion>
+
+  <Accordion title="Checksum validation">
+    Used to verify the integrity of remotely downloaded scripts.
+
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `md5` | string | MD5 checksum of the remote script. |
+    | `sha1` | string | SHA1 checksum of the remote script. |
+    | `sha256` | string | SHA256 checksum of the remote script. |
+    | `sha384` | string | SHA384 checksum of the remote script. |
+    | `sha512` | string | SHA512 checksum of the remote script. |
+  </Accordion>
+
+  <Accordion title="Windows-specific options">
+    | Option | Type | Default | Description |
+    |--------|------|---------|-------------|
+    | `powershell_args` | string | `-ExecutionPolicy Bypass` | Extra arguments passed to the PowerShell executable. |
+    | `powershell_elevated_interactive` | boolean | `false` | Run an elevated script in interactive mode. Requires `privileged: true` and auto-login enabled. |
+  </Accordion>
+</AccordionGroup>
+
+## Windows guests
+
+On Windows guests using the `winrm` communicator, inline scripts must be PowerShell — Batch scripts are not supported inline. When using the `winssh` communicator, the configured shell (defaulting to PowerShell) is used.
+
+Upload path defaults to `C:\tmp\vagrant-shell` on Windows guests.
+
+<Warning>
+The `powershell_elevated_interactive` option requires that the Windows guest has auto-login configured. The user must be logged in for interactive mode to work.
+</Warning>
+
+## Using multiple shell provisioners
+
+You can chain multiple shell provisioners to keep scripts focused and ordered:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "update", type: "shell",
+    inline: "apt-get update -y"
+
+  config.vm.provision "install", type: "shell",
+    inline: "apt-get install -y nginx"
+
+  config.vm.provision "start", type: "shell",
+    inline: "systemctl enable --now nginx"
+end
+```
+
+Run a specific one later with:
+
+```bash
+vagrant provision --provision-with install
+```

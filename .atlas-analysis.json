@@ -1,26 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Vagrant",
+  "projectType": "cli-tool",
+  "projectName": "Vagrant",
+  "projectDescription": "Vagrant is a CLI tool for building, managing, and distributing portable virtualized development environments across VirtualBox, VMware, Docker, and cloud providers.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#040404"
-  },
-  "favicon": "https://media.brand.dev/b1b4c623-d7dc-41a2-923c-59e9d10b957e.svg",
-  "logo": {
-    "light": "https://media.brand.dev/fe5ef0bb-82fe-4801-a870-988286acf246.svg",
-    "dark": "https://media.brand.dev/fe5ef0bb-82fe-4801-a870-988286acf246.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/hashicorp/vagrant"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/hashicorp/vagrant"
-    }
-  },
+  "primaryColor": "#040404",
+  "lightColor": null,
+  "darkColor": null,
   "navigation": {
     "tabs": [
       {
@@ -97,5 +82,39 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Single Vagrantfile workflow for reproducible dev environments",
+    "Multi-provider support: VirtualBox, VMware, Docker, HyperV, AWS",
+    "Built-in provisioning with Shell, Ansible, Chef, Puppet, Docker, Salt",
+    "Flexible networking: port forwarding, private and public networks",
+    "Synced folders via NFS, SMB, rsync, or VirtualBox shared folders",
+    "Rich plugin system for commands, providers, provisioners, and more",
+    "Multi-machine environments from a single Vagrantfile",
+    "Vagrant Cloud for box distribution and discovery",
+    "Snapshot support for saving and restoring machine state",
+    "Cross-platform: Windows, macOS, and Linux"
+  ],
+  "publicApiSurface": [
+    "vagrant up",
+    "vagrant halt",
+    "vagrant destroy",
+    "vagrant ssh",
+    "vagrant reload",
+    "vagrant provision",
+    "vagrant suspend / resume",
+    "vagrant snapshot push/pop/save/restore",
+    "vagrant box add/remove/list/update",
+    "vagrant plugin install/uninstall/list",
+    "vagrant global-status",
+    "vagrant init",
+    "vagrant package",
+    "vagrant validate",
+    "vagrant status",
+    "config.vm.box",
+    "config.vm.network",
+    "config.vm.synced_folder",
+    "config.vm.provision",
+    "config.vm.provider"
+  ]
 }

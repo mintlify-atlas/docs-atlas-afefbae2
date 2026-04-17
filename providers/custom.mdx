@@ -1,0 +1,242 @@
+---
+title: "Building a custom Vagrant provider plugin from scratch"
+description: "Write a Vagrant provider plugin to manage any platform. Covers plugin structure, required interface methods, action middleware, and gem packaging."
+---
+
+Vagrant's provider system is fully pluggable. If the built-in VirtualBox, Hyper-V, and Docker providers do not meet your needs, you can write a provider plugin that teaches Vagrant to manage any virtualization platform, cloud API, or container runtime. This page introduces the plugin structure, the interface your provider must implement, and how to register it so Vagrant can discover it.
+
+<Note>
+  Building a provider plugin is an advanced task. Familiarity with Ruby and the Vagrant plugin system is assumed. Start by reading the [plugin overview](/plugins/overview) and the [plugin development guide](/plugins/development).
+</Note>
+
+## How provider plugins work
+
+A Vagrant provider is a Ruby gem that registers itself with Vagrant's plugin API at load time. When Vagrant needs to start, stop, or manage a machine, it calls into a stack of _actions_ that your provider defines. Each action is a middleware-like object that receives an environment hash, does work, and calls the next action in the stack.
+
+The overall structure of a provider plugin looks like this:
+
+```
+my-vagrant-provider/
+├── my_vagrant_provider.gemspec
+├── lib/
+│   └── vagrant-my-provider/
+│       ├── plugin.rb       # Plugin registration
+│       ├── provider.rb     # Provider class
+│       ├── config.rb       # Vagrantfile configuration DSL
+│       └── action.rb       # Action stack definitions
+```
+
+## Registering the plugin
+
+Every Vagrant plugin starts with a class that inherits from `Vagrant.plugin("2")`. Register your provider inside this class:
+
+```ruby
+# lib/vagrant-my-provider/plugin.rb
+require "vagrant"
+
+module VagrantPlugins
+  module MyProvider
+    class Plugin < Vagrant.plugin("2")
+      name "My Provider"
+      description "Manages machines on My Platform."
+
+      provider(:my_provider) do
+        require_relative "provider"
+        Provider
+      end
+
+      config(:my_provider, :provider) do
+        require_relative "config"
+        Config
+      end
+    end
+  end
+end
+```
+
+The symbol passed to `provider` (`:my_provider` above) is what users pass to `--provider` or `VAGRANT_DEFAULT_PROVIDER`:
+
+```bash
+vagrant up --provider my_provider
+```
+
+## The provider class
+
+Your provider class inherits from `Vagrant.plugin("2", :provider)` and implements a small, well-defined interface:
+
+```ruby
+# lib/vagrant-my-provider/provider.rb
+module VagrantPlugins
+  module MyProvider
+    class Provider < Vagrant.plugin("2", :provider)
+      # Return true if this provider is installed and usable on the
+      # current host. Called by Vagrant's auto-detection logic.
+      def self.usable?(raise_error = false)
+        # Check for required binaries, OS, etc.
+        true
+      end
+
+      # Return the action to run for a given Vagrant command symbol,
+      # or nil if your provider does not support it.
+      def action(name)
+        action_class = Action.const_get(name.to_s.capitalize) rescue nil
+        return nil unless action_class
+        action_class.new
+      end
+
+      # Return a hash of machine state information.
+      # :id    => the provider's internal ID for the machine (or nil)
+      # :state => a MachineState instance
+      def machine_id_changed
+        # Called when the machine ID changes (e.g., after `up`).
+      end
+
+      # Return the SSH info hash Vagrant needs to connect:
+      # { host:, port:, username:, private_key_path: }
+      def ssh_info
+        nil  # Return nil if the machine is not running.
+      end
+
+      # Return the state of the machine as a Vagrant::MachineState.
+      def state
+        id = machine.id
+        if id.nil?
+          return Vagrant::MachineState.new(:not_created, "not created", "not created")
+        end
+        # Query your platform's API here.
+        Vagrant::MachineState.new(:running, "running", "running")
+      end
+    end
+  end
+end
+```
+
+### Required methods
+
+| Method | Purpose |
+|--------|---------|
+| `self.usable?` | Returns `true` if the provider can run on this host. Vagrant calls this during provider auto-detection. |
+| `action(name)` | Returns a callable action (or middleware stack) for the given command symbol (`:up`, `:halt`, `:destroy`, etc.), or `nil` if unsupported. |
+| `state` | Returns a `Vagrant::MachineState` describing the current machine state. |
+| `ssh_info` | Returns a hash with connection details (host, port, username, key path), or `nil` when the machine is unreachable. |
+
+## Action stacks
+
+Providers implement commands by building middleware stacks using `Vagrant::Action::Builder`. Each step in the stack is a class with `initialize(app, env)` and `call(env)` methods:
+
+```ruby
+# lib/vagrant-my-provider/action/up.rb
+module VagrantPlugins
+  module MyProvider
+    module Action
+      class Up
+        def initialize(app, env)
+          @app = app
+        end
+
+        def call(env)
+          machine = env[:machine]
+          env[:ui].info "Starting machine on My Platform..."
+
+          # Create the machine on your platform, then store its ID.
+          machine.id = create_machine(machine.config)
+
+          @app.call(env)  # Continue down the middleware stack.
+        end
+
+        private
+
+        def create_machine(config)
+          # Platform-specific creation logic.
+          "machine-#{SecureRandom.hex(4)}"
+        end
+      end
+    end
+  end
+end
+```
+
+Return the action class (or a `Vagrant::Action::Builder` instance) from `Provider#action`:
+
+```ruby
+def action(name)
+  case name
+  when :up
+    Action::Up.new
+  when :halt
+    Action::Halt.new
+  when :destroy
+    Action::Destroy.new
+  else
+    nil
+  end
+end
+```
+
+## Provider configuration
+
+Define Vagrantfile options for your provider by subclassing `Vagrant.plugin("2", :config)`:
+
+```ruby
+# lib/vagrant-my-provider/config.rb
+module VagrantPlugins
+  module MyProvider
+    class Config < Vagrant.plugin("2", :config)
+      attr_accessor :region
+      attr_accessor :instance_type
+
+      def initialize
+        @region        = UNSET_VALUE
+        @instance_type = UNSET_VALUE
+      end
+
+      def finalize!
+        @region        = "us-east-1" if @region == UNSET_VALUE
+        @instance_type = "small"     if @instance_type == UNSET_VALUE
+      end
+
+      def validate(machine)
+        errors = _detected_errors
+        errors << "my_provider: region must be set" if @region.nil?
+        { "My Provider" => errors }
+      end
+    end
+  end
+end
+```
+
+Users configure your provider in their Vagrantfile exactly like built-in providers:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provider "my_provider" do |m|
+    m.region        = "eu-west-1"
+    m.instance_type = "large"
+  end
+end
+```
+
+## Packaging and installing
+
+Package your provider as a standard Ruby gem. Users install it with:
+
+```bash
+vagrant plugin install vagrant-my-provider
+```
+
+During development, install from a local path:
+
+```bash
+vagrant plugin install /path/to/vagrant-my-provider.gem
+```
+
+Or add it directly from source using a local gem build:
+
+```bash
+gem build my_vagrant_provider.gemspec
+vagrant plugin install vagrant-my-provider-0.1.0.gem
+```
+
+## Further reading
+
+The [plugin providers](/plugins/providers) reference page covers the full provider interface, action environment keys, and capability registration in detail.

@@ -1,0 +1,281 @@
+---
+title: "Chef and Puppet configuration management in Vagrant"
+description: "Vagrant supports Chef Solo, Chef Zero, Puppet Apply, and Puppet Agent for configuration management of guest machines using cookbooks, manifests, and modules."
+---
+
+Vagrant provides built-in support for two of the most established configuration management systems: Chef and Puppet. Both tools let you describe the desired state of a machine declaratively, and Vagrant handles uploading the necessary files and invoking the tools on the guest. This page covers the Chef and Puppet provisioners with practical `Vagrantfile` examples for each.
+
+<Note>
+If you are new to Vagrant, start with the [shell provisioner](/provisioning/shell). Chef and Puppet are fully featured systems — they are worth learning, but they have their own concepts and tooling that go beyond the scope of this page.
+</Note>
+
+<Tabs>
+  <Tab title="Chef">
+    ## Chef provisioners
+
+    Vagrant supports two Chef provisioners:
+
+    - **`chef_solo`** — runs Chef Solo using cookbooks on the host machine, without a Chef Server.
+    - **`chef_zero`** — runs a local in-memory Chef Server (Chef Zero/local mode), giving you a middle ground between `chef_solo` and a full Chef Client setup.
+
+    A third option, `chef_client`, connects to a real Chef Server and is covered in the [Chef Client documentation](https://developer.hashicorp.com/vagrant/docs/provisioning/chef_client).
+
+    ### chef_solo
+
+    `chef_solo` is ideal if you already have cookbooks and want to apply them without a Chef Server.
+
+    **Simplest configuration** — add a recipe from the default `cookbooks/` directory:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "chef_solo" do |chef|
+        chef.add_recipe "apache"
+      end
+    end
+    ```
+
+    Vagrant expects the cookbook to live at `cookbooks/apache/` relative to the `Vagrantfile`.
+
+    **Custom cookbooks path:**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "chef_solo" do |chef|
+        chef.cookbooks_path = ["cookbooks", "site-cookbooks"]
+        chef.add_recipe "base"
+        chef.add_recipe "webserver"
+      end
+    end
+    ```
+
+    **Roles and data bags:**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "chef_solo" do |chef|
+        chef.cookbooks_path = "cookbooks"
+        chef.roles_path     = "roles"
+        chef.data_bags_path = "data_bags"
+        chef.add_role "web"
+      end
+    end
+    ```
+
+    Role files must be named after the role: a `web` role must live at `roles/web.json` or `roles/web.rb`.
+
+    **Node attributes (JSON):**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "chef_solo" do |chef|
+        chef.add_recipe "apache"
+        chef.json = {
+          "apache" => {
+            "listen_address" => "0.0.0.0",
+            "port"           => 8080
+          }
+        }
+      end
+    end
+    ```
+
+    #### chef_solo options
+
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `cookbooks_path` | string or array | Path(s) to cookbook directories. Defaults to `"cookbooks"`. |
+    | `roles_path` | string or array | Path(s) to role definitions. |
+    | `data_bags_path` | string or array | Path to data bags. Chef 12+ required for array. |
+    | `environments_path` | string | Path to environment definitions. |
+    | `environment` | string | Chef environment name. Requires Chef 11.6+. |
+    | `nodes_path` | string or array | Path(s) to node JSON files. |
+    | `recipe_url` | string | URL to a cookbook archive for Chef to download. |
+    | `synced_folder_type` | string | Synced folder type used to share cookbook data (e.g. `"nfs"`). |
+
+    ### chef_zero
+
+    `chef_zero` behaves like `chef_solo` but also starts a local in-memory Chef Server. It supports node objects and allows the `nodes_path` option (required). The configuration syntax is the same:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "chef_zero" do |chef|
+        chef.cookbooks_path = "cookbooks"
+        chef.data_bags_path = "data_bags"
+        chef.nodes_path     = "nodes"
+        chef.roles_path     = "roles"
+
+        chef.add_recipe "base"
+        chef.add_role   "web"
+      end
+    end
+    ```
+
+    `chef_zero` uses the same options as `chef_solo`, with `nodes_path` required.
+
+    <Tip>
+    Use `chef_zero` instead of `chef_solo` when your cookbooks use search or other Chef Server features that `chef_solo` does not support.
+    </Tip>
+  </Tab>
+  <Tab title="Puppet">
+    ## Puppet provisioners
+
+    Vagrant supports two Puppet provisioners:
+
+    - **`puppet`** (Puppet Apply) — applies manifests locally on the guest using `puppet apply`, without a Puppet Master.
+    - **`puppet_server`** (Puppet Agent) — connects to an external Puppet Master using `puppet agent` and retrieves the catalog from there.
+
+    ### puppet (puppet apply)
+
+    The `puppet` provisioner applies manifests stored on the host. By default, Vagrant looks for manifests in the `manifests/` directory and uses `default.pp` as the entry point:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet"
+    end
+    ```
+
+    Expected directory layout:
+
+    ```text
+    .
+    ├── Vagrantfile
+    └── manifests/
+        └── default.pp
+    ```
+
+    **Custom manifest path and file:**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet" do |puppet|
+        puppet.manifests_path = "puppet/manifests"
+        puppet.manifest_file  = "site.pp"
+      end
+    end
+    ```
+
+    **Modules:**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet" do |puppet|
+        puppet.manifests_path = "manifests"
+        puppet.module_path    = "modules"
+      end
+    end
+    ```
+
+    **Puppet Environments (Puppet 4+):**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet" do |puppet|
+        puppet.environment_path = "environments"
+        puppet.environment      = "production"
+      end
+    end
+    ```
+
+    **Custom Facter facts:**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet" do |puppet|
+        puppet.facter = { "vagrant" => "1", "env" => "development" }
+      end
+    end
+    ```
+
+    **Additional options:**
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet" do |puppet|
+        puppet.options = "--verbose --debug"
+      end
+    end
+    ```
+
+    #### puppet apply options
+
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `manifests_path` | string | Path to the directory containing manifest files. Defaults to `"manifests"`. |
+    | `manifest_file` | string | Entry-point manifest filename. Defaults to `"default.pp"`. |
+    | `module_path` | string or array | Path(s) to Puppet modules. |
+    | `environment` | string | Puppet environment name (Puppet 4+). |
+    | `environment_path` | string | Path to the environments directory on the host. |
+    | `facter` | hash | Custom Facter facts available during the Puppet run. |
+    | `hiera_config_path` | string | Path to a Hiera configuration file on the host. |
+    | `working_directory` | string | Absolute path on the guest used as the working directory. |
+    | `options` | string or array | Additional command-line flags for `puppet apply`. |
+    | `binary_path` | string | Path to Puppet's `bin/` directory on the guest. |
+    | `environment_variables` | hash | Environment variables set before the `puppet apply` run. |
+    | `synced_folder_type` | string | Synced folder type for sharing manifest data. |
+    | `temp_dir` | string | Directory on the guest where Puppet data is staged. |
+
+    ### puppet_server (puppet agent)
+
+    The `puppet_server` provisioner connects to an external Puppet Master. The guest must be able to reach the master over the network:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet_server" do |puppet|
+        puppet.puppet_server = "puppet.example.com"
+      end
+    end
+    ```
+
+    Configure the node name that registers with the master (Puppet uses this to compile the catalog):
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet_server" do |puppet|
+        puppet.puppet_server = "puppet.example.com"
+        puppet.puppet_node   = "webnode.example.com"
+      end
+    end
+    ```
+
+    Pass extra flags to `puppet agent`:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "puppet_server" do |puppet|
+        puppet.puppet_server = "puppet.example.com"
+        puppet.options       = "--verbose --debug"
+      end
+    end
+    ```
+
+    #### puppet_server options
+
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `puppet_server` | string | Hostname of the Puppet Master. Defaults to `"puppet"`. |
+    | `puppet_node` | string | Node name to register as. Defaults to the guest hostname or box name. |
+    | `facter` | hash | Additional Facter facts for the Puppet run. |
+    | `options` | string or array | Extra flags for `puppet agent`. |
+    | `binary_path` | string | Path to Puppet's `bin/` directory on the guest. |
+    | `client_cert_path` | string | Path on the host to a client certificate to upload. |
+    | `client_private_key_path` | string | Path on the host to a client private key to upload. |
+  </Tab>
+</Tabs>
+
+## Combining Chef or Puppet with other provisioners
+
+Chef and Puppet work alongside any other Vagrant provisioner. A common pattern is to use a shell provisioner to bootstrap prerequisites before running Chef or Puppet:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell",
+    inline: "apt-get update -y"
+
+  config.vm.provision "chef_solo" do |chef|
+    chef.cookbooks_path = "cookbooks"
+    chef.add_recipe "myapp"
+  end
+end
+```
+
+See [provisioning overview](/provisioning/overview) for details on ordering and run frequency.

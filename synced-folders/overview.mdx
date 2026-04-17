@@ -1,0 +1,138 @@
+---
+title: 'Synced folders in Vagrant: share files with your VM'
+description: 'Learn how Vagrant synced folders work, how to configure them with config.vm.synced_folder, and how to control ownership, permissions, and sync type.'
+---
+
+Vagrant synced folders keep files on your host machine in sync with a directory inside the guest VM. This means you can edit code with your preferred local tools while the guest environment — with its specific runtime, compiler, or server — executes that code. By default, Vagrant mounts your project directory (the folder containing the `Vagrantfile`) to `/vagrant` on the guest automatically.
+
+## How synced folders work
+
+When Vagrant starts a machine with `vagrant up`, it sets up each configured synced folder using the appropriate backend. The default backend depends on your provider: VirtualBox uses its built-in shared folders mechanism, while other setups may use NFS, rsync, or SMB. Changes flow between host and guest in real time for most backends, though rsync is one-directional (host to guest only).
+
+## Default /vagrant mount
+
+Every Vagrant machine gets a `/vagrant` mount pointing at the project directory on the host. No configuration is required:
+
+```bash
+# Inside the guest
+ls /vagrant
+# Vagrantfile  src/  README.md  ...
+```
+
+## Configuring synced folders
+
+Add `config.vm.synced_folder` calls to your `Vagrantfile` to define additional mounts. The first argument is the path on the host (relative to the project root or absolute), and the second is an absolute path on the guest:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder "src/", "/srv/website"
+end
+```
+
+Vagrant creates the guest directory recursively if it does not already exist.
+
+## Sync type examples
+
+Specify the `type` option to choose a sync backend explicitly:
+
+<Tabs>
+  <Tab title="VirtualBox (default)">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.synced_folder ".", "/vagrant"
+    end
+    ```
+
+    The default when using the VirtualBox provider. Bi-directional and requires VirtualBox Guest Additions installed on the guest.
+  </Tab>
+  <Tab title="NFS">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.synced_folder ".", "/vagrant", type: "nfs"
+    end
+    ```
+
+    Better performance than VirtualBox shared folders. Requires `nfsd` on the host and a private network when using VirtualBox. See [NFS synced folders](/synced-folders/nfs) for full details.
+  </Tab>
+  <Tab title="rsync">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.synced_folder ".", "/vagrant", type: "rsync",
+        rsync__exclude: ".git/"
+    end
+    ```
+
+    One-way sync from host to guest, performed at `vagrant up` and `vagrant reload`. Run `vagrant rsync-auto` to watch for changes automatically.
+  </Tab>
+  <Tab title="SMB">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.synced_folder ".", "/vagrant", type: "smb"
+    end
+    ```
+
+    Available on Windows and macOS hosts. Bi-directional and higher-performance than VirtualBox shared folders on Windows.
+  </Tab>
+</Tabs>
+
+## Common options
+
+These options apply to all synced folder types:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `disabled` | boolean | `false` | Skip setup of this folder entirely. |
+| `create` | boolean | `false` | Create the host path if it does not exist. |
+| `owner` | string | SSH user | User that owns the mount inside the guest. |
+| `group` | string | SSH user | Group that owns the mount inside the guest. |
+| `mount_options` | array | — | Extra options passed directly to the `mount` command. |
+| `type` | string | auto | Sync backend: `"nfs"`, `"rsync"`, `"smb"`, or `"virtualbox"`. |
+| `id` | string | — | Name for the mount point as shown by `mount` inside the guest. |
+
+## Disabling synced folders
+
+Set `disabled: true` to prevent a folder from being mounted. This also works on the default `/vagrant` share:
+
+```ruby
+Vagrant.configure("2") do |config|
+  # Disable a custom folder
+  config.vm.synced_folder "src/", "/srv/website", disabled: true
+
+  # Disable the default /vagrant mount
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+end
+```
+
+## Controlling ownership and permissions
+
+By default, Vagrant sets the owner and group of the mounted folder to the SSH user. Override this with the `owner` and `group` options:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder "src/", "/srv/website",
+    owner: "www-data", group: "www-data"
+end
+```
+
+<Note>
+  If you also specify `uid` or `gid` inside `mount_options`, those values take precedence over `owner` and `group`. For example:
+
+  ```ruby
+  config.vm.synced_folder ".", "/vagrant",
+    owner: "vagrant",
+    group: "vagrant",
+    mount_options: ["uid=1234", "gid=1234"]
+  ```
+
+  The folder will be owned by UID/GID 1234, not the `vagrant` user.
+</Note>
+
+## Symbolic links
+
+Support for symbolic links across synced folder backends is inconsistent. Vagrant configures providers like VirtualBox to allow symlinks where possible, but some host and guest OS combinations still behave incorrectly. Test symlinks in your specific environment before relying on them.
+
+## Next steps
+
+<Card title="NFS synced folders" icon="server" href="/synced-folders/nfs">
+  Use NFS for significantly better I/O performance on Linux and macOS hosts, with full coverage of NFS-specific options and sudo configuration.
+</Card>

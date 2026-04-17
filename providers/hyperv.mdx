@@ -1,0 +1,218 @@
+---
+title: "Configure and use Windows Hyper-V as a Vagrant provider"
+description: "Run Vagrant on Windows using the built-in Hyper-V provider. Covers enabling Hyper-V, admin requirements, memory and CPU settings, and known limitations."
+---
+
+Vagrant includes built-in support for [Hyper-V](https://learn.microsoft.com/en-us/virtualization/hyper-v-on-windows/about/), the native hypervisor built into Windows. Because Hyper-V is part of the operating system, no additional software installation is needed beyond enabling the feature — but it does require Windows Enterprise, Professional, or Education (8.1 or later) and must be run with administrator privileges.
+
+## Requirements
+
+- Windows 8.1, Windows 10, or Windows 11 (Enterprise, Professional, or Education edition)
+- Hyper-V enabled (see below)
+- Vagrant running with administrator privileges
+
+The Hyper-V provider is not available on Windows Home editions or on macOS and Linux.
+
+## Enabling Hyper-V
+
+<Steps>
+  <Step title="Open Windows Features">
+    Go to **Control Panel → Programs → Turn Windows features on or off**.
+  </Step>
+  <Step title="Check Hyper-V">
+    Expand the **Hyper-V** entry and check the box, then click **OK** and restart.
+  </Step>
+  <Step title="Or use PowerShell">
+    Run the following command in an elevated PowerShell session, then restart:
+
+    ```powershell
+    Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  All Vagrant commands that manage Hyper-V machines must be run from an **elevated (administrator) terminal**. Vagrant will show a clear error if it detects insufficient permissions.
+</Warning>
+
+## Basic usage
+
+```bash
+vagrant up --provider hyperv
+```
+
+Set `VAGRANT_DEFAULT_PROVIDER=hyperv` to avoid typing the flag every time:
+
+```bash
+$env:VAGRANT_DEFAULT_PROVIDER = "hyperv"
+vagrant up
+```
+
+Find Hyper-V compatible boxes on [Vagrant Cloud](https://app.vagrantup.com/boxes/search?provider=hyperv). The `hashicorp/bionic64` box is a good starting point.
+
+## Configuration
+
+Provider-specific settings go inside a `config.vm.provider "hyperv"` block.
+
+### Memory and CPUs
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.provider "hyperv" do |h|
+    h.memory = 2048
+    h.cpus   = 2
+  end
+end
+```
+
+Set `maxmemory` to enable Hyper-V Dynamic Memory Allocation. When set, `memory` becomes the startup allocation and `maxmemory` is the upper limit:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.memory    = 512
+  h.maxmemory = 4096
+end
+```
+
+Set `maxmemory` to `nil` to disable dynamic memory.
+
+### VM name
+
+Override the automatically generated name shown in Hyper-V Manager:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.vmname = "my-dev-vm"
+end
+```
+
+### Linked clones
+
+Use a differencing disk to reduce disk usage and provisioning time:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.linked_clone = true
+end
+```
+
+### Checkpoints
+
+Hyper-V checkpoints are enabled by default. Disable them or enable automatic checkpoints:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.enable_checkpoints           = false
+  h.enable_automatic_checkpoints = false
+end
+```
+
+### Networking options
+
+Set a VLAN ID or a specific MAC address for the guest network interface:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.vlan_id = 100
+  h.mac     = "00:11:22:33:44:55"
+end
+```
+
+### Host lifecycle actions
+
+Control what happens to the VM when the Windows host starts or shuts down:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.auto_start_action = "StartIfRunning"   # Nothing | StartIfRunning | Start
+  h.auto_stop_action  = "ShutDown"         # ShutDown | TurnOff | Save
+end
+```
+
+### Enhanced session mode
+
+Enable the Hyper-V Enhanced Session transport for better display and clipboard integration:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.enable_enhanced_session_mode = true
+end
+```
+
+### Virtualization extensions
+
+Allow the guest to run nested hypervisors by enabling virtualization extensions:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.enable_virtualization_extensions = true
+end
+```
+
+### VM integration services
+
+Configure Hyper-V integration services as a hash. Known service names can be provided in snake_case; unknown keys are passed through as-is:
+
+```ruby
+config.vm.provider "hyperv" do |h|
+  h.vm_integration_services = {
+    guest_service_interface: true,
+    heartbeat:               true,
+    time_synchronization:    false,
+    shutdown:                true
+  }
+end
+```
+
+## Configuration reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `vmname` | string | generated | Name shown in Hyper-V Manager. |
+| `memory` | integer | `nil` | Startup memory in MB. |
+| `maxmemory` | integer | `nil` | Maximum memory in MB. Enables Dynamic Memory when set. |
+| `cpus` | integer | `nil` | Number of virtual CPUs. |
+| `linked_clone` | boolean | `false` | Use a differencing disk instead of copying the full VHD. |
+| `enable_checkpoints` | boolean | `true` | Enable Hyper-V checkpoints. |
+| `enable_automatic_checkpoints` | boolean | `false` | Enable automatic checkpoints. |
+| `enable_enhanced_session_mode` | boolean | `false` | Use Enhanced Session transport. |
+| `enable_virtualization_extensions` | boolean | `false` | Allow nested virtualization. |
+| `auto_start_action` | string | `"Nothing"` | VM action on host startup (`Nothing`, `StartIfRunning`, `Start`). |
+| `auto_stop_action` | string | `"ShutDown"` | VM action on host shutdown (`ShutDown`, `TurnOff`, `Save`). |
+| `vlan_id` | integer | `nil` | VLAN ID for the guest network interface. |
+| `mac` | string | `nil` | MAC address for the guest network interface. |
+| `ip_address_timeout` | integer | `120` | Seconds to wait for the VM to report an IP address. |
+| `vm_integration_services` | hash | `{}` | Integration services to enable or disable. |
+
+## Limitations
+
+### Networking
+
+Vagrant does not create or configure Hyper-V virtual switches. When you run `vagrant up`, Vagrant prompts you to select an existing virtual switch from those already configured in Hyper-V Manager.
+
+Because of this, `config.vm.network` entries for private networks and static IPs are ignored with the Hyper-V provider — Vagrant cannot enforce them. The IP address assigned to the machine is still reported at the end of `vagrant up` and can be used as if it were a host-only address.
+
+### Snapshots
+
+Restoring a snapshot with `vagrant snapshot pop` or `vagrant snapshot restore` may raise errors related to mounting SMB synced folders. The mounts will still function inside the guest after a brief delay, but the error message can be safely ignored.
+
+## Complete example
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.provider "hyperv" do |h|
+    h.vmname                       = "bionic-dev"
+    h.memory                       = 1024
+    h.maxmemory                    = 4096
+    h.cpus                         = 2
+    h.linked_clone                 = true
+    h.enable_checkpoints           = true
+    h.enable_automatic_checkpoints = false
+    h.auto_stop_action             = "ShutDown"
+  end
+end
+```

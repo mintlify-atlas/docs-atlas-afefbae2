@@ -1,0 +1,84 @@
+---
+title: "How the Vagrant plugin system works and what it supports"
+description: "Vagrant plugins extend the tool with new commands, providers, provisioners, guests, and host support — all through a stable, versioned Ruby API."
+---
+
+Vagrant ships with a rich set of built-in features, but the plugin system lets you go further. Plugins are first-class citizens in Vagrant: they use the same internal API that Vagrant itself relies on to implement providers, provisioners, and commands. Because the plugin interface is versioned and stable across major releases, plugins you write today continue to work as Vagrant evolves.
+
+## What plugins can do
+
+A single plugin can register one or more components. Each component type targets a different part of Vagrant's lifecycle:
+
+| Component | What it adds |
+|---|---|
+| **Commands** | New subcommands invocable as `vagrant your-command` |
+| **Providers** | Support for new hypervisors or cloud platforms (e.g., AWS, VMware) |
+| **Provisioners** | New software-installation methods beyond shell, Ansible, and Chef |
+| **Guests** | Detection and support for new guest operating systems |
+| **Hosts** | Detection and support for new host operating systems |
+| **Config** | New `config.*` keys available in every `Vagrantfile` |
+
+## Installing a plugin
+
+Install any plugin published to RubyGems with a single command:
+
+```bash
+vagrant plugin install vagrant-plugin-name
+```
+
+You can also install from a local `.gem` file:
+
+```bash
+vagrant plugin install /path/to/my-plugin.gem
+```
+
+Once installed, the plugin loads automatically every time Vagrant runs. To see what is currently installed:
+
+```bash
+vagrant plugin list
+```
+
+To upgrade all installed plugins to their latest versions:
+
+```bash
+vagrant plugin update
+```
+
+To remove a plugin:
+
+```bash
+vagrant plugin uninstall vagrant-plugin-name
+```
+
+<Warning>
+  Third-party plugins are written outside of the Vagrant core team. A poorly written plugin can introduce instability. Prefer plugins that are actively maintained and have an open-source repository you can inspect.
+</Warning>
+
+## Popular community plugins
+
+The Vagrant plugin ecosystem includes plugins for common providers and workflows. Some well-known examples:
+
+- **vagrant-aws** — Run Vagrant-managed machines on Amazon EC2.
+- **vagrant-vmware-desktop** — Use VMware Fusion or Workstation as a provider.
+- **vagrant-digitalocean** — Provision machines on DigitalOcean droplets.
+- **vagrant-hostmanager** — Automatically manage `/etc/hosts` entries for your machines.
+- **vagrant-vbguest** — Keep VirtualBox Guest Additions in sync with your VirtualBox version.
+
+You can find plugins by searching [RubyGems](https://rubygems.org) for gems prefixed with `vagrant-`.
+
+## Explore the plugin system
+
+<CardGroup cols={2}>
+  <Card title="Plugin development basics" icon="code" href="/plugins/development">
+    Understand plugin anatomy, the plugin class, component registration, action hooks, and error handling.
+  </Card>
+  <Card title="Writing a provider plugin" icon="server" href="/plugins/providers">
+    Add support for a new hypervisor or cloud platform by implementing the provider interface.
+  </Card>
+  <Card title="Writing a provisioner plugin" icon="wrench" href="/plugins/provisioners">
+    Automate software installation with a custom provisioner that hooks into the machine boot lifecycle.
+  </Card>
+  <Card title="CLI: vagrant plugin" icon="terminal" href="/cli/plugin">
+    Full reference for the `vagrant plugin` subcommands: install, update, uninstall, and list.
+  </Card>
+</CardGroup>

@@ -1,0 +1,222 @@
+---
+title: "Managing Vagrant boxes with vagrant box subcommands"
+description: "Add, list, update, remove, prune, repackage, and check for outdated Vagrant boxes using every available vagrant box subcommand with examples."
+---
+
+Vagrant boxes are the base images from which machines are created. The `vagrant box` command group lets you download boxes from Vagrant Cloud or local files, inspect what is installed, keep boxes up to date, and reclaim disk space by removing old versions. This page documents every `vagrant box` subcommand with its synopsis, available flags, and example usage.
+
+## vagrant box add
+
+**Synopsis:** `vagrant box add ADDRESS`
+
+Downloads and installs a box. `ADDRESS` can be:
+
+- A shorthand name from [Vagrant Cloud](https://vagrantcloud.com/boxes/search), such as `hashicorp/bionic64`
+- An HTTP(S) URL to a box catalog entry
+- A direct path or URL to a `.box` file (requires `--name`)
+
+If a download is interrupted, Vagrant resumes it automatically the next time the same URL is requested, for up to 24 hours.
+
+```bash
+# Add from Vagrant Cloud
+vagrant box add hashicorp/bionic64
+
+# Add from a direct URL with a name
+vagrant box add --name my-box https://example.com/mybox.box
+
+# Add a specific version
+vagrant box add --box-version "1.2.0" hashicorp/bionic64
+
+# Add with a version constraint
+vagrant box add --box-version ">= 1.0, < 2.0" hashicorp/bionic64
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--box-version VALUE` | Exact version or version constraint (e.g. `>= 1.0, < 2.0`) |
+| `--provider PROVIDER` | Verify the box is for the given provider |
+| `-a` / `--architecture ARCH` | Architecture the box should satisfy (e.g. `amd64`, `arm64`) |
+| `--force` | Overwrite an existing box with the same name |
+| `--clean` | Remove old temporary files from a previous partial download |
+| `--location-trusted` | Trust `Location` headers from HTTP redirects and forward credentials to redirect targets |
+
+#### Flags for direct `.box` files
+
+These flags only apply when adding a box directly (not via a catalog):
+
+| Flag | Description |
+|---|---|
+| `--name VALUE` | Logical name used in `config.vm.box` in the Vagrantfile |
+| `--checksum VALUE` | Expected checksum of the downloaded file |
+| `--checksum-type TYPE` | Hash algorithm: `md5`, `sha1`, or `sha256` |
+
+<Tip>
+Always use `--checksum` and `--checksum-type` when adding a direct `.box` file. Box files are large and verifying the checksum guards against corruption or tampering.
+</Tip>
+
+<Note>
+For boxes from Vagrant Cloud, checksums are embedded in the catalog metadata, which is served over TLS. You do not need to supply them manually.
+</Note>
+
+---
+
+## vagrant box list
+
+**Synopsis:** `vagrant box list`
+
+Lists all boxes currently installed on the system, along with their provider and version:
+
+```bash
+vagrant box list
+# hashicorp/bionic64  (virtualbox, 1.0.282)
+# ubuntu/focal64      (virtualbox, 20240101.0.0)
+```
+
+---
+
+## vagrant box outdated
+
+**Synopsis:** `vagrant box outdated`
+
+Checks whether the box used by the current Vagrant environment has a newer version available. Use `--global` to check all installed boxes at once.
+
+```bash
+# Check the box for the current project
+vagrant box outdated
+
+# Check all installed boxes
+vagrant box outdated --global
+```
+
+Vagrant caches outdated-check results for one hour. Use `--force` to bypass the cache:
+
+```bash
+vagrant box outdated --global --force
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--global` | Check all installed boxes, not just the current environment's box |
+| `--force` | Ignore the one-hour cache and re-fetch update metadata |
+
+<Note>
+This command requires an internet connection to fetch box metadata. It shows the latest version available for the specific provider, which may differ from the absolute latest version across all providers.
+</Note>
+
+---
+
+## vagrant box prune
+
+**Synopsis:** `vagrant box prune`
+
+Removes old versions of installed boxes, keeping only the most recent version. If a box version is currently in use, Vagrant prompts for confirmation before removing it.
+
+```bash
+vagrant box prune
+
+# Preview what would be removed without deleting anything
+vagrant box prune --dry-run
+
+# Prune a specific box by name
+vagrant box prune --name hashicorp/bionic64
+
+# Remove without prompts, but keep boxes currently in use
+vagrant box prune --force --keep-active-boxes
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--provider PROVIDER` | Only prune boxes for the specified provider |
+| `--name NAME` | Only prune old versions of the named box |
+| `--dry-run` | Print which boxes would be removed without actually removing them |
+| `--force` | Remove without confirmation, even when a box is in use |
+| `--keep-active-boxes` | When used with `--force`, skip boxes that are actively in use |
+
+---
+
+## vagrant box remove
+
+**Synopsis:** `vagrant box remove NAME`
+
+Removes a specific box (and optionally a specific version or provider) from the system:
+
+```bash
+vagrant box remove hashicorp/bionic64
+
+# Remove a specific version
+vagrant box remove hashicorp/bionic64 --box-version 1.0.282
+
+# Remove all versions
+vagrant box remove hashicorp/bionic64 --all
+
+# Remove a specific provider variant
+vagrant box remove hashicorp/bionic64 --provider vmware_fusion
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--box-version VALUE` | Version or constraint of boxes to remove |
+| `--all` | Remove all installed versions of the box |
+| `--all-providers` | Remove all provider variants within a version |
+| `--all-architectures` | Remove all architectures within a provider and version |
+| `-a` / `--architecture ARCH` | Remove only the specified architecture variant |
+| `--provider VALUE` | Remove only the specified provider variant |
+| `--force` | Remove even if a running environment is using the box |
+
+<Warning>
+`vagrant destroy` does not remove the box. Even after destroying a machine, the box file remains on disk. Run `vagrant box remove` to reclaim disk space.
+</Warning>
+
+---
+
+## vagrant box repackage
+
+**Synopsis:** `vagrant box repackage NAME PROVIDER VERSION`
+
+Repacks an installed box back into a `.box` file in the current directory. Useful for redistributing a box you have installed but no longer have the original file for:
+
+```bash
+vagrant box repackage hashicorp/bionic64 virtualbox 1.0.282
+```
+
+Get the exact `NAME`, `PROVIDER`, and `VERSION` values from `vagrant box list`.
+
+---
+
+## vagrant box update
+
+**Synopsis:** `vagrant box update`
+
+Updates the box for the current Vagrant environment to the latest available version. Use `--box` to update a specific box outside of any active project:
+
+```bash
+# Update the box for the current project
+vagrant box update
+
+# Update a specific box by name
+vagrant box update --box hashicorp/bionic64
+
+# Update a specific box for a specific provider
+vagrant box update --box hashicorp/bionic64 --provider virtualbox
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--box VALUE` | Name of the box to update (outside of a project context) |
+| `--provider VALUE` | When `--box` is specified, limit the update to this provider |
+| `--architecture VALUE` | When `--box` is specified, limit the update to this architecture |
+| `--force` | Overwrite an existing box even if the same version is already installed |
+
+<Warning>
+Updating a box does not affect machines that are already created. To apply the updated box, destroy the existing machine with `vagrant destroy` and bring it back up with `vagrant up`.
+</Warning>

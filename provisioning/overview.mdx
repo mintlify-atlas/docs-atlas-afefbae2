@@ -1,0 +1,123 @@
+---
+title: "Automated guest machine provisioning with Vagrant"
+description: "Vagrant provisioners install software and configure guest machines on first boot or on demand, creating reproducible environments without manual setup steps."
+---
+
+Vagrant provisioners let you automatically install software, apply configuration, and prepare a guest machine as part of `vagrant up`. Instead of logging in and running commands by hand after a box boots, you declare what should be installed and how — and Vagrant takes care of the rest every time the environment starts.
+
+## When provisioners run
+
+Vagrant runs provisioners at three points during the machine lifecycle:
+
+- **First `vagrant up`**: provisioners run automatically the first time a new machine is created.
+- **`vagrant provision`**: re-runs all provisioners on an already-running machine.
+- **`vagrant reload --provision`**: reboots the machine and re-runs provisioners. The `--provision` flag is required.
+
+You can skip provisioning by passing `--no-provision` to `vagrant up` or `vagrant reload`. To force provisioning on subsequent starts, pass `--provision`.
+
+## Basic configuration
+
+Every provisioner is configured with `config.vm.provision` in your `Vagrantfile`. Pass the provisioner type as the first argument, followed by options:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "echo hello"
+end
+```
+
+For more complex configurations, use the Ruby block form:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell" do |s|
+    s.inline = "echo hello"
+  end
+end
+```
+
+## Run frequency
+
+By default, provisioners only run once — on the first `vagrant up` after a `vagrant destroy`. Use the `run` option to change this:
+
+```ruby
+Vagrant.configure("2") do |config|
+  # Run on every vagrant up and vagrant reload
+  config.vm.provision "shell", inline: "echo hello", run: "always"
+end
+```
+
+```ruby
+Vagrant.configure("2") do |config|
+  # Never run automatically; invoke with --provision-with
+  config.vm.provision "bootstrap", type: "shell", run: "never" do |s|
+    s.inline = "echo bootstrap"
+  end
+end
+```
+
+Valid values for `run` are `"once"` (default), `"always"`, and `"never"`.
+
+## Multiple provisioners
+
+You can define multiple `config.vm.provision` blocks. They run in the order defined:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "apt-get update -y"
+  config.vm.provision "shell", inline: "apt-get install -y nginx"
+end
+```
+
+When provisioners are defined at multiple scopes (global config, multi-machine, provider override), outer scopes always run before inner ones.
+
+## Naming provisioners
+
+Giving a provisioner a name lets you target it with `--provision-with` and override its settings in sub-scopes:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "install-nginx", type: "shell" do |s|
+    s.inline = "apt-get install -y nginx"
+  end
+end
+```
+
+Run only the named provisioner:
+
+```bash
+vagrant provision --provision-with install-nginx
+```
+
+## Common options
+
+Every provisioner accepts these base options:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `name` | string | Name for this provisioner instance. Required as the first argument if `type` is not set. |
+| `type` | string | Provisioner type (e.g. `"shell"`, `"ansible"`). Required when `name` is also set. |
+| `run` | string | When to run: `"once"`, `"always"`, or `"never"`. |
+| `before` | string or symbol | Run before the named provisioner, or `:each`/`:all`. |
+| `after` | string or symbol | Run after the named provisioner, or `:each`/`:all`. |
+| `communicator_required` | boolean | If `false`, the provisioner runs even if Vagrant cannot communicate with the guest. Defaults to `true`. |
+
+<Note>
+If you are new to provisioning, start with the shell provisioner. It requires no additional tools and is easy to understand.
+</Note>
+
+## Available provisioners
+
+<CardGroup cols={2}>
+  <Card title="Shell" icon="terminal" href="/provisioning/shell">
+    Run inline commands or upload and execute shell scripts on the guest. The simplest way to get started.
+  </Card>
+  <Card title="Ansible" icon="play" href="/provisioning/ansible">
+    Run Ansible playbooks from the host (`ansible`) or from the guest itself (`ansible_local`).
+  </Card>
+  <Card title="Docker" icon="docker" href="/provisioning/docker">
+    Pull images, build images from a Dockerfile, and run containers automatically on `vagrant up`.
+  </Card>
+  <Card title="Chef and Puppet" icon="book" href="/provisioning/chef-puppet">
+    Use Chef Solo, Chef Zero, Puppet Apply, or Puppet Agent for full configuration management.
+  </Card>
+</CardGroup>

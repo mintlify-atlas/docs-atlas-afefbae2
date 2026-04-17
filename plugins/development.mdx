@@ -1,0 +1,285 @@
+---
+title: "Developing custom Vagrant plugins: a complete guide"
+description: "Learn how Vagrant plugins are structured, how to register components, use action hooks, and handle errors the Vagrant way — all in Ruby."
+---
+
+Vagrant plugins are Ruby gems that extend Vagrant with new commands, providers, provisioners, guests, hosts, or configuration keys. Because Vagrant uses its own plugin API internally — the core ships as a collection of plugins — the API is stable, well-tested, and designed to survive major version upgrades. This page walks through everything you need to build a plugin from the ground up.
+
+<Warning>
+  Plugin development is an advanced topic. You should be comfortable with Ruby and have experience using Vagrant before attempting to write a plugin.
+</Warning>
+
+## Setting up your development environment
+
+<Steps>
+  <Step title="Scaffold the gem">
+    Vagrant plugins are packaged as RubyGems. Use Bundler to generate the initial directory structure:
+
+    ```bash
+    bundle gem vagrant-my-plugin
+    cd vagrant-my-plugin
+    ```
+
+    This creates a standard gem layout with a `.gemspec`, `lib/` directory, and `Gemfile`.
+  </Step>
+
+  <Step title="Configure your Gemfile">
+    Replace the generated `Gemfile` content so that Vagrant is available for development and your plugin is auto-loaded:
+
+    ```ruby
+    source "https://rubygems.org"
+
+    group :development do
+      gem "vagrant", git: "https://github.com/hashicorp/vagrant.git"
+    end
+
+    group :plugins do
+      gem "vagrant-my-plugin", path: "."
+    end
+    ```
+
+    Vagrant automatically loads every gem in the `plugins` group. This is how you "install" the plugin during development without running `vagrant plugin install`.
+  </Step>
+
+  <Step title="Add a Rakefile">
+    Create a minimal `Rakefile` to get `rake package` and `rake release` tasks:
+
+    ```ruby
+    require "rubygems"
+    require "bundler/setup"
+    Bundler::GemHelper.install_tasks
+    ```
+  </Step>
+
+  <Step title="Write the plugin definition">
+    Create the main plugin file (see the next section). Then run Vagrant via Bundler to test it:
+
+    ```bash
+    bundle exec vagrant --help
+    ```
+  </Step>
+</Steps>
+
+## Plugin anatomy
+
+### The gemspec
+
+Your `.gemspec` declares the gem's metadata and dependencies. Do **not** add `vagrant` as a runtime dependency — Vagrant is never distributed as a gem and will always be present at runtime.
+
+```ruby
+Gem::Specification.new do |spec|
+  spec.name        = "vagrant-my-plugin"
+  spec.version     = "0.1.0"
+  spec.summary     = "A custom Vagrant plugin"
+  spec.authors     = ["Your Name"]
+
+  # Declare any real runtime deps your plugin needs:
+  # spec.add_runtime_dependency "faraday", "~> 2.0"
+end
+```
+
+### Directory layout
+
+A typical plugin follows this structure:
+
+```
+vagrant-my-plugin/
+├── vagrant-my-plugin.gemspec
+├── Gemfile
+├── Rakefile
+└── lib/
+    └── vagrant-my-plugin/
+        ├── plugin.rb      # Plugin definition — always loaded
+        ├── command.rb     # Command implementation (lazy loaded)
+        ├── provisioner.rb # Provisioner implementation (lazy loaded)
+        └── config.rb      # Config class (lazy loaded)
+```
+
+### The plugin class
+
+Every plugin has exactly one definition class that inherits from `Vagrant.plugin("2")`. The string `"2"` is the API version. This class must **always** load successfully, regardless of which version of Vagrant is running:
+
+```ruby
+class MyPlugin < Vagrant.plugin("2")
+  name "My Plugin"
+  description "A short description of what this plugin does."
+end
+```
+
+Calling `name` registers the plugin with Vagrant's plugin manager. Until `name` is called, the plugin does not exist from Vagrant's perspective.
+
+## Registering components
+
+Components are declared inside the plugin class using method calls that match the component type. Each declaration takes a block that **lazily loads** the implementing class. This lazy loading is critical: the implementation files may use APIs that change between major Vagrant versions, but the definition itself must remain forward-compatible.
+
+```ruby
+class MyPlugin < Vagrant.plugin("2")
+  name "My Plugin"
+
+  # Register a new CLI command: `vagrant my-command`
+  command "my-command" do
+    require_relative "command"
+    Command
+  end
+
+  # Register a new provisioner: config.vm.provision :my-provisioner
+  provisioner "my-provisioner" do
+    require_relative "provisioner"
+    Provisioner
+  end
+
+  # Register a new config key: config.my_plugin.*
+  config "my_plugin" do
+    require_relative "config"
+    Config
+  end
+
+  # Register a non-primary command (hidden from `vagrant -h`)
+  command("my-internal-cmd", primary: false) do
+    require_relative "internal_command"
+    InternalCommand
+  end
+end
+```
+
+<Note>
+  Always use `require_relative` inside the block, not at the top of the file. This keeps implementation code from loading until Vagrant actually needs it.
+</Note>
+
+### Available component types
+
+| Method | Registers | Used via |
+|---|---|---|
+| `command(name)` | CLI subcommand | `vagrant name` |
+| `provisioner(name)` | Provisioner | `config.vm.provision :name` |
+| `provider(name)` | Provider | `vagrant up --provider=name` |
+| `config(name)` | Top-level config key | `config.name.*` |
+| `config(name, :provider)` | Provider-specific config | `config.vm.provider :name` |
+| `guest(name)` | Guest OS detection | Automatic |
+| `host(name)` | Host OS detection | Automatic |
+| `action_hook(name, hook)` | Middleware hook | Automatic |
+| `synced_folder(name)` | Synced folder impl | `config.vm.synced_folder …, type: :name` |
+
+## Config plugins
+
+A config class lets users set options in their `Vagrantfile` under a custom key. Subclass `Vagrant.plugin("2", :config)` and use `UNSET_VALUE` as the default for every attribute so that Vagrant can correctly merge multiple `Vagrantfile` layers:
+
+```ruby
+class Config < Vagrant.plugin("2", :config)
+  attr_accessor :timeout
+  attr_accessor :retries
+
+  def initialize
+    @timeout = UNSET_VALUE
+    @retries = UNSET_VALUE
+  end
+
+  def finalize!
+    @timeout = 30 if @timeout == UNSET_VALUE
+    @retries = 3  if @retries == UNSET_VALUE
+  end
+
+  def validate(machine)
+    errors = _detected_errors
+    errors << "timeout must be positive" if @timeout <= 0
+    { "my_plugin" => errors }
+  end
+end
+```
+
+After `finalize!` runs, the config is available anywhere you have a machine reference:
+
+```ruby
+machine.config.my_plugin.timeout  # => 30 (or user-set value)
+```
+
+## Action hooks
+
+Action hooks let you inject middleware into Vagrant's lifecycle without modifying core code. Use `action_hook` inside your plugin class:
+
+```ruby
+class MyPlugin < Vagrant.plugin("2")
+  name "My Plugin"
+
+  # Run before every machine action
+  action_hook(:my_hook) do |hooks|
+    hooks.prepend(MyMiddleware)
+  end
+
+  # Run only before machine_action_up
+  action_hook(:my_up_hook, :machine_action_up) do |hooks|
+    hooks.append(MyPostUpMiddleware)
+  end
+end
+```
+
+### Available action hooks
+
+The following hooks are guaranteed to be stable across Vagrant releases:
+
+<AccordionGroup>
+  <Accordion title="Environment hooks">
+    - `environment_plugins_loaded` — after plugins load, before config/providers/provisioners
+    - `environment_load` — after all configurations are fully loaded
+    - `environment_unload` — after the environment is done being used
+  </Accordion>
+  <Accordion title="Machine lifecycle hooks">
+    - `machine_action_boot` — after the hypervisor reports the machine booted
+    - `machine_action_config_validate` — after all `Vagrantfile`s are merged and validated
+    - `machine_action_destroy` — after the VM is terminated
+    - `machine_action_halt` — after the machine is stopped (but not terminated)
+    - `machine_action_provision` — after all provisioners have run
+    - `machine_action_reload` — after the VM is reloaded
+    - `machine_action_resume` — after the machine resumes from a halted state
+    - `machine_action_ssh` — after an SSH connection is established
+    - `machine_action_suspend` — after the machine is suspended
+    - `machine_action_up` — after the machine enters the up state
+    - `machine_action_sync_folders` — after synced folders are configured
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  Additional hooks exist in the Vagrant source but are not part of the public API. Only the hooks listed above are guaranteed to persist between releases.
+</Warning>
+
+## Error handling
+
+Vagrant expects that users never see a raw Ruby stack trace. Any exception that inherits from `Vagrant::Errors::VagrantError` is caught and printed as a clean error message, then Vagrant exits with status 1. Any other exception is treated as an unexpected bug.
+
+```ruby
+module VagrantPlugins
+  module MyPlugin
+    module Errors
+      class MyPluginError < Vagrant::Errors::VagrantError
+        error_namespace("vagrant_plugins.my_plugin.errors")
+      end
+
+      class ConnectionFailed < MyPluginError
+        error_key(:connection_failed)
+      end
+    end
+  end
+end
+```
+
+Raise these errors anywhere in your plugin code:
+
+```ruby
+raise Errors::ConnectionFailed, host: machine.config.my_plugin.host
+```
+
+## Console input and output
+
+Never use `puts` or `gets` directly. Instead, use the Vagrant UI object, which correctly handles non-TTY environments, closed pipes, and logging:
+
+```ruby
+# Inside a middleware action:
+env[:ui].info("Starting custom provisioner...")
+env[:ui].warn("Could not reach remote host, retrying...")
+env[:ui].error("Provisioning failed.")
+
+# For user input:
+answer = env[:ui].ask("Enter your API token: ")
+```
+
+The UI object is available as `env[:ui]` in middleware actions, and as `machine.ui` on any machine instance.

@@ -1,0 +1,147 @@
+---
+title: "SSH into Vagrant machines with vagrant ssh and ssh-config"
+description: "Open interactive shell sessions, run single commands, export SSH config, and understand Windows SSH behavior with vagrant ssh and vagrant ssh-config."
+---
+
+Vagrant provides two commands for SSH access: `vagrant ssh` opens an interactive shell session inside a running machine, and `vagrant ssh-config` prints a ready-to-use SSH configuration block so that external tools like `ssh`, Ansible, or VS Code Remote can connect directly. This page covers both commands, including how to target specific machines in multi-machine environments, useful flags, and important differences on Windows hosts.
+
+## vagrant ssh
+
+**Synopsis:** `vagrant ssh [name|id] [-- extra_ssh_args]`
+
+Connects to a running Vagrant machine and drops you into a shell. On single-machine projects the machine name can be omitted:
+
+```bash
+vagrant ssh
+```
+
+### Connecting to specific machines
+
+In multi-machine projects, specify the machine by name as shown in `vagrant status`:
+
+```bash
+vagrant status
+# node1   running (virtualbox)
+# node2   running (virtualbox)
+
+vagrant ssh node1
+vagrant ssh node2
+```
+
+You can also use the short ID from `vagrant global-status` to connect from any directory:
+
+```bash
+vagrant global-status
+# 13759ff  node1  virtualbox  running  /Users/user/vagrant/myproject
+
+vagrant ssh 13759ff
+```
+
+### Key flags
+
+| Flag | Description |
+|---|---|
+| `-c COMMAND` / `--command COMMAND` | Run a single command non-interactively, then exit |
+| `-p` / `--plain` | Connect without Vagrant-managed authentication, leaving credentials to the user |
+
+### Running a single command
+
+Use `--command` (or `-c`) to execute a command and capture its output without opening an interactive session:
+
+```bash
+vagrant ssh --command "uname -a"
+vagrant ssh --command "df -h"
+```
+
+<Warning>
+If the command you run forks a background process (e.g. appends `&`), that process will be terminated almost immediately because Vagrant exits the shell when the command completes. Use `nohup` or a process manager to detach long-running processes.
+</Warning>
+
+### Passing extra SSH arguments
+
+Arguments after `--` are forwarded directly to the underlying `ssh` binary. This lets you set up reverse tunnels or pass any other `ssh` flag:
+
+```bash
+vagrant ssh -- -R 9000:localhost:9000
+```
+
+### Plain mode
+
+`--plain` skips Vagrant's automatic key injection and authentication. Use this when you have configured your own SSH keys or are connecting to a machine with custom authentication:
+
+```bash
+vagrant ssh --plain
+```
+
+## vagrant ssh-config
+
+**Synopsis:** `vagrant ssh-config [name|id]`
+
+Outputs a valid `~/.ssh/config` block for connecting directly to a Vagrant machine using the system `ssh` command (or any tool that reads SSH config):
+
+```bash
+vagrant ssh-config
+```
+
+Example output:
+
+```
+Host default
+  HostName 127.0.0.1
+  User vagrant
+  Port 2222
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentityFile /home/user/.vagrant.d/insecure_private_key
+  IdentitiesOnly yes
+  LogLevel FATAL
+```
+
+Pipe this into your SSH config file to enable direct `ssh default` access:
+
+```bash
+vagrant ssh-config >> ~/.ssh/config
+ssh default
+```
+
+### Options
+
+| Flag | Description |
+|---|---|
+| `--host NAME` | Override the `Host` label in the generated config block |
+
+Override the host name for use in scripts or when managing multiple projects:
+
+```bash
+vagrant ssh-config --host myproject-web
+```
+
+## Port forwarding for SSH
+
+Vagrant automatically sets up port forwarding so that `vagrant ssh` works without any manual network configuration. By default, port 2222 on the host forwards to port 22 on the guest. If that port is already in use, Vagrant assigns a different host port automatically.
+
+The forwarded port details are visible in `vagrant ssh-config` output under `Port`.
+
+## Windows hosts and WinRM
+
+On Windows, some machines use WinRM instead of SSH for guest communication (particularly Windows guests). For those machines:
+
+- `vagrant ssh` is not available; use `vagrant rdp` or connect via WinRM directly.
+- Linux and other Unix guests still use SSH and work normally with `vagrant ssh`.
+
+For the SSH client itself, Vagrant looks for `ssh` on your `PATH`. When running inside Cygwin or MSYS2 shells, the SSH client bundled with the Vagrant Windows installer may not work correctly. Install the SSH package built for your shell environment to resolve this:
+
+```bash
+# In MSYS2
+pacman -S openssh
+```
+
+<Note>
+Vagrant can use Pageant (the PuTTY SSH agent) through internal libraries, but the `ssh` executable does not have Pageant support. Keys loaded in Pageant will not be available for agent forwarding through `vagrant ssh`. Consider [ssh-pageant](https://github.com/cuviper/ssh-pageant) to bridge Pageant and the OpenSSH agent socket.
+</Note>
+
+## SSH client requirements
+
+- **Linux / macOS:** `ssh` must be installed and available on `PATH`. This is standard on most systems.
+- **Windows:** Vagrant ships an SSH client with its installer and falls back to it when none is found on `PATH`. The bundled client may not work in all terminal environments (see above).

@@ -1,0 +1,286 @@
+---
+title: "Writing a custom Vagrant provider plugin with Ruby"
+description: "Build a Vagrant provider plugin to run machines on any hypervisor or cloud platform by implementing the provider interface and action middleware stack."
+---
+
+Vagrant providers are the layer between the `Vagrantfile` and the actual compute resource that runs your machine. The built-in VirtualBox provider is itself implemented as a plugin using the same API described here. Writing a custom provider lets you target any hypervisor, cloud platform, or container runtime — users then select it with `vagrant up --provider=your_provider`. This page covers the provider interface, the action middleware system, box formats, state management, and provider-specific configuration.
+
+<Warning>
+  Provider development is an advanced topic. Read [plugin development basics](/plugins/development) before continuing.
+</Warning>
+
+## Registering the provider
+
+Inside your plugin definition class, register the provider with the `provider` method. The name you choose becomes the `--provider` flag value:
+
+```ruby
+class MyPlugin < Vagrant.plugin("2")
+  name "My Cloud Provider"
+
+  provider "my_cloud" do
+    require_relative "provider"
+    Provider
+  end
+
+  # Enable parallelization (optional — off by default)
+  provider("my_cloud", parallel: true) do
+    require_relative "provider"
+    Provider
+  end
+end
+```
+
+Users invoke your provider with:
+
+```bash
+vagrant up --provider=my_cloud
+```
+
+## The provider class
+
+Your provider class subclasses `Vagrant.plugin("2", :provider)`, which is the upgrade-safe way to get the correct base class for the current Vagrant version:
+
+```ruby
+class Provider < Vagrant.plugin("2", :provider)
+  # Called before instantiation to check whether this provider
+  # is available on the current system. Return false (or raise if
+  # raise_error is true) when required software is missing.
+  def self.usable?(raise_error = false)
+    true
+  end
+
+  # Called to check whether the provider binary/SDK is installed.
+  # If Vagrant can auto-install the provider, it will try to do so.
+  def self.installed?
+    true
+  end
+
+  # @param [Vagrant::Machine] machine The machine this provider manages.
+  def initialize(machine)
+    @machine = machine
+  end
+
+  # Return an action callable for the given action name.
+  # Return nil for any action your provider does not support —
+  # Vagrant will show a friendly error rather than crashing.
+  #
+  # @param [Symbol] name  e.g. :up, :halt, :destroy, :ssh_run, :suspend
+  # @return [Object, nil] A callable (proc, class with .call, or middleware builder)
+  def action(name)
+    action_method = "action_#{name}"
+    return Action.send(action_method) if Action.respond_to?(action_method)
+    nil
+  end
+
+  # Called when the underlying machine ID changes (or becomes nil on destroy).
+  def machine_id_changed
+  end
+
+  # Return SSH connection info, or nil if SSH is not yet possible.
+  # @return [Hash, nil]
+  def ssh_info
+    {
+      host:             "192.168.1.100",
+      port:             22,
+      username:         "vagrant",
+      private_key_path: ["/path/to/key"],
+    }
+  end
+
+  # Return the current machine state as a Vagrant::MachineState.
+  # @return [Vagrant::MachineState]
+  def state
+    id = @machine.id
+    state_id = id ? :running : :not_created
+    Vagrant::MachineState.new(state_id, state_id.to_s, state_id.to_s)
+  end
+end
+```
+
+### Required actions
+
+Vagrant requests actions by symbol name. You do not need to implement every action — unimplemented actions produce a user-friendly error. The most common actions to support are:
+
+| Action symbol | When Vagrant calls it |
+|---|---|
+| `:up` | `vagrant up` |
+| `:halt` | `vagrant halt` |
+| `:destroy` | `vagrant destroy` |
+| `:suspend` | `vagrant suspend` |
+| `:resume` | `vagrant resume` |
+| `:reload` | `vagrant reload` |
+| `:provision` | `vagrant provision` |
+| `:ssh` | `vagrant ssh` |
+| `:ssh_run` | `vagrant ssh -c <cmd>` |
+| `:read_state` | Reading machine state |
+| `:package` | `vagrant package` |
+
+## Action middleware
+
+The action system is the most important part of a provider. Each action is a middleware stack — a sequence of steps that each have `call` (forward path) and optional cleanup (reverse path). This gives you error recovery, ordered execution, and composability.
+
+```ruby
+module Action
+  # Build the :up action stack
+  def self.action_up
+    Vagrant::Action::Builder.new.tap do |b|
+      b.use Vagrant::Action::Builtin::ConfigValidate
+      b.use Vagrant::Action::Builtin::HandleBox
+      b.use Vagrant::Action::Builtin::BoxCheckOutdated
+      b.use HandleProvision
+      b.use Boot
+      b.use Vagrant::Action::Builtin::WaitForCommunicator
+    end
+  end
+
+  def self.action_halt
+    Vagrant::Action::Builder.new.tap do |b|
+      b.use Vagrant::Action::Builtin::GracefulHalt, :stopped, :running
+      b.use PowerOff
+    end
+  end
+
+  def self.action_destroy
+    Vagrant::Action::Builder.new.tap do |b|
+      b.use Vagrant::Action::Builtin::Call, IsCreated do |env, b2|
+        next unless env[:result]
+        b2.use action_halt
+        b2.use DeleteVM
+      end
+    end
+  end
+end
+```
+
+### Writing a middleware step
+
+Each middleware class receives the action environment hash and a reference to the next middleware (`app`):
+
+```ruby
+class Boot
+  def initialize(app, env)
+    @app = app
+    @env = env
+  end
+
+  def call(env)
+    machine = env[:machine]
+    env[:ui].info("Booting #{machine.name}...")
+
+    # Do the actual work — e.g., call your cloud API
+    instance_id = create_instance(machine)
+    machine.id = instance_id
+
+    # Call the next middleware in the stack
+    @app.call(env)
+  end
+
+  def recover(env)
+    # Called during stack unwinding on error — clean up here
+    cleanup_partial_instance(env[:machine])
+  end
+
+  private
+
+  def create_instance(machine)
+    # Your cloud/hypervisor API call here
+    "instance-#{SecureRandom.hex(4)}"
+  end
+end
+```
+
+### Built-in middleware
+
+Vagrant ships a standard library of middleware in `Vagrant::Action::Builtin`. Use these instead of reimplementing common patterns:
+
+| Middleware | Purpose |
+|---|---|
+| `ConfigValidate` | Validate the merged `Vagrantfile` config |
+| `HandleBox` | Download and verify the box |
+| `BoxCheckOutdated` | Warn if a newer box version is available |
+| `WaitForCommunicator` | Block until SSH or WinRM is ready |
+| `GracefulHalt` | Attempt a graceful shutdown before forced halt |
+| `Call` | Conditionally branch the middleware stack |
+| `EnvSet` | Set values in the action environment |
+| `Provision` | Run all provisioners |
+
+## Box format
+
+Every provider defines its own box format. The only requirement is that `metadata.json` inside the box archive contains a `provider` key matching your provider's name:
+
+```json
+{
+  "provider": "my_cloud"
+}
+```
+
+Beyond that, you can store any files or metadata your provider needs. The VirtualBox box, for example, is a flat export of `VBoxManage export`. An AWS box is just a `Vagrantfile` that sets defaults.
+
+Verify your box format before writing any provider code:
+
+```bash
+vagrant box add my-box /path/to/my-box.box
+vagrant box list
+```
+
+## Persisting machine state
+
+Vagrant gives each machine a dedicated state directory accessible via `machine.data_dir` (a Ruby `Pathname`). Use it to store any state your provider needs across commands — for example, an instance ID or VM UUID:
+
+```ruby
+def save_id(machine, instance_id)
+  machine.data_dir.join("instance_id").open("w") do |f|
+    f.write(instance_id)
+  end
+end
+
+def load_id(machine)
+  id_file = machine.data_dir.join("instance_id")
+  id_file.exist? ? id_file.read.strip : nil
+end
+```
+
+When a machine is destroyed, clean up everything in `data_dir`. Vagrant core does not do this for you.
+
+## Provider-specific configuration
+
+Expose custom `Vagrantfile` options under your provider's namespace by registering a config component with the `:provider` scope. The config name must match your provider name exactly:
+
+```ruby
+class MyPlugin < Vagrant.plugin("2")
+  name "My Cloud Provider"
+
+  provider "my_cloud" do
+    require_relative "provider"
+    Provider
+  end
+
+  config("my_cloud", :provider) do
+    require_relative "config"
+    Config
+  end
+end
+```
+
+Users can then configure your provider in their `Vagrantfile`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "my-cloud/ubuntu-22.04"
+
+  config.vm.provider :my_cloud do |p|
+    p.region        = "us-east-1"
+    p.instance_type = "t3.micro"
+  end
+end
+```
+
+Access provider config inside your middleware or provider class via `machine.provider_config`:
+
+```ruby
+region = machine.provider_config.region
+```
+
+<Tip>
+  Design your provider so it works with zero provider-specific configuration. Follow Vagrant's convention-over-configuration philosophy: sensible defaults mean users can run `vagrant up --provider=my_cloud` without writing any provider block.
+</Tip>

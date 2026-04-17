@@ -1,0 +1,180 @@
+---
+title: 'Private and public networks in Vagrant: full guide'
+description: 'Set up private networks with DHCP or static IPs and public bridged networks in Vagrant, including IPv6 support and bridge adapter configuration.'
+---
+
+Vagrant supports two additional network types beyond forwarded ports: private networks, which isolate the guest on an address reachable only from the host and other VMs on the same network, and public networks, which bridge the guest onto your physical LAN so it gets a real IP alongside your other machines. Use the tabs below to explore each type.
+
+<Tabs>
+  <Tab title="Private network">
+    ## Private networks
+
+    **Network identifier:** `private_network`
+
+    A private network assigns your guest an IP address from a private address space that is not routable on the public internet. Multiple VMs within the same private network can reach each other directly, which is useful for multi-machine setups that need to communicate internally.
+
+    <Info>
+      Private networks require Vagrant to configure network adapters on the guest OS. Vagrant knows how to do this for most common operating systems, but very old or unusual guests may not configure correctly.
+    </Info>
+
+    ### DHCP
+
+    The simplest option lets DHCP assign an address automatically:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "private_network", type: "dhcp"
+    end
+    ```
+
+    To find the assigned address, SSH into the machine and run `ip addr show` or `ifconfig`.
+
+    ### Static IPv4
+
+    Assign a fixed IP address so you always know how to reach the guest:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "private_network", ip: "192.168.50.4"
+    end
+    ```
+
+    Choose an address from the [private address space](https://en.wikipedia.org/wiki/Private_network#Private_IPv4_address_spaces) (for example `192.168.x.x` or `10.x.x.x`). These addresses are guaranteed not to be publicly routable.
+
+    <Warning>
+      Do not pick an IP that overlaps with another interface or subnet already in use on your host. Overlapping ranges can make parts of your network unreachable.
+    </Warning>
+
+    ### Static IPv6
+
+    Specify an IPv6 address directly; DHCP for IPv6 is not supported by Vagrant:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "private_network", ip: "fde4:8dba:82e1::c4"
+    end
+    ```
+
+    Vagrant reserves the entire `/64` subnet. To use a different prefix length, pass the `netmask` option:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "private_network",
+        ip: "fde4:8dba:82e1::c4",
+        netmask: "96"
+    end
+    ```
+
+    <Note>
+      IPv6 private network support was added in Vagrant 1.7.5 and may not work with every provider.
+    </Note>
+
+    ### Disabling auto-configuration
+
+    If you want to configure the network interface yourself (for example, through a shell provisioner), disable Vagrant's automatic setup:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "private_network", ip: "192.168.50.4",
+        auto_config: false
+    end
+    ```
+
+    If the machine was already running before you set `auto_config: false`, any configuration files Vagrant wrote previously remain on disk. You need to remove them manually or destroy and recreate the machine.
+  </Tab>
+  <Tab title="Public network">
+    ## Public networks
+
+    **Network identifier:** `public_network`
+
+    A public network bridges your guest machine onto the same physical network as your host. The VM gets its own IP address from that network, making it reachable by other devices on the LAN just like any real machine.
+
+    <Warning>
+      Vagrant boxes ship with well-known default passwords and insecure SSH keypairs. Bridging to a public network exposes those credentials to anyone on your LAN. Review the [default box configuration](/boxes/overview) and change all credentials before enabling a public network.
+    </Warning>
+
+    ### DHCP
+
+    The easiest configuration lets the network's DHCP server assign an address:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network"
+    end
+    ```
+
+    To find the assigned address, SSH into the machine and run `ifconfig` or `ip addr show`.
+
+    If you need the DHCP-assigned default route to remain unchanged, add the `use_dhcp_assigned_default_route` option:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network",
+        use_dhcp_assigned_default_route: true
+    end
+    ```
+
+    ### Static IP
+
+    Assign a fixed IP to the bridged interface:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network", ip: "192.168.0.17"
+    end
+    ```
+
+    ### Selecting a bridge adapter
+
+    When the host has more than one network interface, Vagrant prompts you to choose which one to bridge against. Specify a default to skip the prompt:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network", bridge: "en1: Wi-Fi (AirPort)"
+    end
+    ```
+
+    The string must match an available interface name exactly. You can also provide a priority list; Vagrant uses the first adapter it finds:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network", bridge: [
+        "en1: Wi-Fi (AirPort)",
+        "en6: Broadcom NetXtreme Gigabit Ethernet Controller",
+      ]
+    end
+    ```
+
+    ### Disabling auto-configuration
+
+    To configure the interface yourself via a shell provisioner:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network", auto_config: false
+
+      config.vm.provision "shell",
+        run: "always",
+        inline: "ifconfig eth1 192.168.0.17 netmask 255.255.255.0 up"
+    end
+    ```
+
+    ### Overriding the default route
+
+    If you need the VM to be reachable from other networks over the public interface, you may need to adjust the default route:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "public_network", ip: "192.168.0.17"
+
+      config.vm.provision "shell",
+        run: "always",
+        inline: "route add default gw 192.168.0.1"
+    end
+    ```
+
+    <Note>
+      Default route manipulation is guest OS-specific. The exact commands differ between Linux distributions. Test this carefully in your environment before relying on it.
+    </Note>
+  </Tab>
+</Tabs>

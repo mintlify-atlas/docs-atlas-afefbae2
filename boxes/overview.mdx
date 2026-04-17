@@ -1,0 +1,178 @@
+---
+title: "Vagrant Boxes: Base Images for Development Environments"
+description: "Learn what Vagrant boxes are, how to find and add them from Vagrant Cloud, and how to manage, update, and remove boxes on your system."
+---
+
+Vagrant boxes are the base images used to create virtual machines. A box packages a complete operating system image in a format Vagrant can use to boot an identical environment on any machine — whether it's your laptop, a teammate's workstation, or a CI server. You specify which box to use in your Vagrantfile, and Vagrant downloads and caches it locally so subsequent `vagrant up` calls start immediately.
+
+<Note>
+  Boxes require a provider — a virtualization product such as VirtualBox, VMware, or Docker — to operate. Make sure you have a supported [provider](/providers/overview) installed before working with boxes.
+</Note>
+
+## Finding boxes
+
+The fastest way to find a box is to browse the [public Vagrant box catalog on Vagrant Cloud](https://vagrantcloud.com/boxes/search). The catalog contains base OS images for all major Linux distributions, Windows Server, and macOS, as well as pre-configured stacks (LAMP, Ruby, Python, etc.).
+
+Each box listing shows:
+- The namespace and box name (e.g., `hashicorp/bionic64`)
+- The supported providers
+- Available versions
+- Download instructions
+
+<Warning>
+  A namespace like `ubuntu` on Vagrant Cloud does not represent an official or verified publisher — it behaves like a GitHub namespace. HashiCorp cannot provide support for third-party published boxes. Use boxes from publishers you trust.
+</Warning>
+
+## Official boxes
+
+There are two officially recommended box sets for general use.
+
+**HashiCorp** publishes `hashicorp/bionic64`, a minimal Ubuntu 18.04 64-bit box optimized for size and speed. It supports VirtualBox, Hyper-V, and VMware.
+
+**Bento** publishes a broad set of open-source base boxes covering many OS versions and providers including VirtualBox, VMware, and Parallels. The Bento project provides the foundation for `hashicorp/bionic64`.
+
+Canonical publishes Ubuntu boxes under the `ubuntu` namespace, but those boxes support VirtualBox only.
+
+## Adding a box
+
+<Tabs>
+  <Tab title="Initialize a new project">
+    Use `vagrant init` to create a new Vagrantfile with a box pre-configured:
+
+    ```bash
+    vagrant init hashicorp/bionic64
+    vagrant up
+    ```
+
+    This creates a `Vagrantfile` in the current directory and starts the machine.
+  </Tab>
+  <Tab title="Add to an existing Vagrantfile">
+    Set `config.vm.box` in your Vagrantfile, then run `vagrant up`:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box = "hashicorp/bionic64"
+    end
+    ```
+
+    ```bash
+    vagrant up
+    ```
+  </Tab>
+  <Tab title="Add without a project">
+    Download and register a box without creating a Vagrantfile, so it's available for future use:
+
+    ```bash
+    vagrant box add hashicorp/bionic64
+    ```
+
+    You can also add a box from a local file or custom URL:
+
+    ```bash
+    vagrant box add my-custom-box /path/to/mybox.box
+    vagrant box add my-remote-box https://example.com/boxes/mybox.box
+    ```
+  </Tab>
+</Tabs>
+
+## Managing boxes
+
+Vagrant stores downloaded boxes locally in `~/.vagrant.d/boxes`. Use the `vagrant box` command to manage them.
+
+<Steps>
+  <Step title="List installed boxes">
+    See all boxes and versions currently installed on your system:
+
+    ```bash
+    vagrant box list
+    ```
+
+    Example output:
+
+    ```
+    hashicorp/bionic64  (virtualbox, 1.0.282)
+    ubuntu/focal64      (virtualbox, 20230201.0.0)
+    ```
+  </Step>
+
+  <Step title="Check for updates">
+    Check whether the box in your current Vagrant environment has a newer version available:
+
+    ```bash
+    vagrant box outdated
+    ```
+
+    Check all installed boxes at once:
+
+    ```bash
+    vagrant box outdated --global
+    ```
+  </Step>
+
+  <Step title="Update a box">
+    Download the latest version of a box. This does not automatically update running machines — you must destroy and recreate them to use the new box.
+
+    ```bash
+    vagrant box update
+    ```
+
+    Update a specific box by name:
+
+    ```bash
+    vagrant box update --box hashicorp/bionic64
+    ```
+  </Step>
+
+  <Step title="Remove a box">
+    Remove a specific box version from your system:
+
+    ```bash
+    vagrant box remove hashicorp/bionic64
+    ```
+
+    Remove a specific version:
+
+    ```bash
+    vagrant box remove hashicorp/bionic64 --box-version 1.0.282
+    ```
+  </Step>
+
+  <Step title="Prune old versions">
+    Remove all outdated box versions that are not currently used by any Vagrant environment:
+
+    ```bash
+    vagrant box prune
+    ```
+  </Step>
+</Steps>
+
+## Creating your own box
+
+If no existing box fits your needs, you can create one. The typical workflow is:
+
+1. Create a [base box](/providers/overview) with minimal OS configuration using your provider's tools.
+2. Package it as a `.box` file (a tarball containing VM artifacts, a `metadata.json` file with the provider name, and optionally a Vagrantfile with defaults).
+3. Add it locally with `vagrant box add`, or publish it to Vagrant Cloud.
+
+```bash
+# Package the currently running machine as a new box
+vagrant package --output my-custom.box
+
+# Add the packaged box locally
+vagrant box add my-custom-box my-custom.box
+```
+
+<Tip>
+  A box's `metadata.json` must contain at minimum a `"provider"` key. Without it, Vagrant cannot verify the box and will reject it during `vagrant box add`.
+</Tip>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Box versioning" icon="tag" href="/boxes/versioning">
+    Pin your environment to a specific box version or define update constraints.
+  </Card>
+  <Card title="box CLI reference" icon="terminal" href="/cli/box">
+    Full documentation for the `vagrant box` subcommands.
+  </Card>
+</CardGroup>

@@ -1,0 +1,215 @@
+---
+title: "Extending Vagrant functionality with vagrant plugin"
+description: "Install, uninstall, update, list, repair, and expunge Vagrant plugins from RubyGems or local gem files, including local project-scoped plugins."
+---
+
+Vagrant's plugin system lets you extend or replace almost any part of its functionality—adding new providers, provisioners, commands, or host/guest capabilities. The `vagrant plugin` command group manages the full lifecycle of plugins: installing from RubyGems or local files, keeping them updated, removing them, and fully wiping all plugin data when things go wrong. This page covers every `vagrant plugin` subcommand, plugin sources, local project plugins, and common maintenance tasks.
+
+## vagrant plugin install
+
+**Synopsis:** `vagrant plugin install <name>...`
+
+Installs one or more plugins by name from [RubyGems](https://rubygems.org) (the default source), or from a local `.gem` file:
+
+```bash
+# Install from RubyGems
+vagrant plugin install vagrant-vbguest
+
+# Install from a local gem file
+vagrant plugin install /path/to/my-plugin.gem
+
+# Install multiple plugins at once
+vagrant plugin install vagrant-vbguest vagrant-disksize
+```
+
+If the plugin is already installed, this command reinstalls it at the latest available version.
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--plugin-version VERSION` | Pin to an exact version or constraint (e.g. `1.2.3` or `> 1.0, < 2.0`) |
+| `--plugin-source SOURCE` | Add a RubyGems-compatible source to fetch from |
+| `--plugin-clean-sources` | Remove all previously configured sources before adding new ones |
+| `--entry-point ENTRYPOINT` | Override the initialization file Vagrant loads for this plugin |
+| `--local` | Install the plugin into the local project only (see [local plugins](#local-plugins)) |
+
+### Plugin sources
+
+By default, Vagrant fetches plugins from RubyGems.org. Use `--plugin-source` to add additional sources, for example a private gem server behind a corporate firewall:
+
+```bash
+vagrant plugin install my-internal-plugin \
+  --plugin-clean-sources \
+  --plugin-source https://gems.example.com
+```
+
+<Note>
+`--plugin-source` affects all future plugin installations in the current Vagrant session, not just the plugin being installed. This is a limitation of the underlying plugin installer.
+</Note>
+
+---
+
+## vagrant plugin uninstall
+
+**Synopsis:** `vagrant plugin uninstall <name> [<name2> ...]`
+
+Removes a plugin and any of its dependencies that are not needed by other plugins:
+
+```bash
+vagrant plugin uninstall vagrant-vbguest
+
+# Remove multiple plugins at once
+vagrant plugin uninstall vagrant-vbguest vagrant-disksize
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--local` | Uninstall from the local project only |
+
+---
+
+## vagrant plugin list
+
+**Synopsis:** `vagrant plugin list`
+
+Prints all installed plugins, their versions, and any version constraints that were set at install time:
+
+```bash
+vagrant plugin list
+# vagrant-vbguest (0.30.0)
+# vagrant-disksize (0.1.3, constrained to > 0.1.0)
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--local` | Include plugins installed in the local project |
+
+---
+
+## vagrant plugin update
+
+**Synopsis:** `vagrant plugin update [<name>]`
+
+Updates all installed plugins to their latest versions (within any constraints set at install time). Pass a name to update only that plugin:
+
+```bash
+# Update all plugins
+vagrant plugin update
+
+# Update a specific plugin
+vagrant plugin update vagrant-vbguest
+```
+
+To change a version constraint, reinstall the plugin with `vagrant plugin install` and the new `--plugin-version` value.
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--local` | Update plugins in the local project |
+
+---
+
+## vagrant plugin expunge
+
+**Synopsis:** `vagrant plugin expunge`
+
+Removes all user-installed plugin data, including gem files, dependencies, and the `plugins.json` metadata file. This provides a clean slate when plugins are in a broken state or when upgrading Vagrant to a new major version.
+
+```bash
+vagrant plugin expunge
+```
+
+After a Vagrant upgrade, plugins often need to be reinstalled due to internal Ruby ABI changes. Use `--reinstall` to remove everything and automatically reinstall the plugins that were previously configured:
+
+```bash
+vagrant plugin expunge --reinstall
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--force` | Skip confirmation prompt |
+| `--reinstall` | Attempt to reinstall previously configured plugins after expunging |
+| `--global-only` | Only remove global plugins (skip local project plugins) |
+| `--local` | Include local project plugins in the expunge |
+| `--local-only` | Only remove local project plugins |
+
+---
+
+## vagrant plugin repair
+
+Vagrant may fail to initialize plugins correctly after manual edits to plugin files, partial installs, or interrupted upgrades. The repair command attempts to automatically fix the problem:
+
+```bash
+vagrant plugin repair
+```
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--local` | Repair local project plugins |
+
+If automatic repair fails, use [vagrant plugin expunge](#vagrant-plugin-expunge) to remove all plugin data and start fresh.
+
+---
+
+## vagrant plugin license
+
+**Synopsis:** `vagrant plugin license <name> <license-file>`
+
+Installs a license file for a commercial Vagrant plugin such as the VMware provider:
+
+```bash
+vagrant plugin license vagrant-vmware-desktop license.lic
+```
+
+---
+
+## Local plugins
+
+By default, plugins are installed globally and available in all Vagrant projects. You can scope a plugin to a single project by passing `--local` to `install`, `uninstall`, `update`, or `list`. Local plugin data is stored in the `.vagrant/` directory alongside the project's `Vagrantfile`.
+
+```bash
+# Install a plugin only for the current project
+vagrant plugin install vagrant-my-tool --local
+
+# List global and local plugins
+vagrant plugin list --local
+```
+
+<Tip>
+Commit the `.vagrant/plugins.json` file to version control so teammates automatically get the same local plugins when they run `vagrant up`.
+</Tip>
+
+## Plugin configuration
+
+Some plugins read configuration from environment variables or from a `~/.vagrant.d/plugins.json` file. Consult each plugin's own documentation for configuration options. Use `vagrant plugin list` to verify a plugin is installed and check its version before troubleshooting behavior.
+
+<AccordionGroup>
+  <Accordion title="Troubleshooting: plugin fails to load on startup">
+    If Vagrant prints an error about a plugin failing to initialize:
+
+    1. Run `vagrant plugin repair` to attempt automatic recovery.
+    2. If repair fails, run `vagrant plugin expunge --reinstall` to wipe and reinstall all plugins.
+    3. If the issue persists after a Vagrant upgrade, the plugin may not yet be compatible with the new version. Check the plugin's issue tracker.
+  </Accordion>
+  <Accordion title="Troubleshooting: installing behind a corporate firewall">
+    If RubyGems.org is blocked:
+
+    ```bash
+    vagrant plugin install my-plugin \
+      --plugin-clean-sources \
+      --plugin-source https://your-internal-gem-server.example.com
+    ```
+
+    Use `--plugin-clean-sources` to remove the default RubyGems.org source before adding your internal one.
+  </Accordion>
+</AccordionGroup>

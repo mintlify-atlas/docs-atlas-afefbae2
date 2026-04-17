@@ -1,0 +1,180 @@
+---
+title: "How to install Vagrant on macOS, Windows, and Linux"
+description: "Download and install Vagrant on your operating system using the official package, a package manager like Homebrew, or by building from source."
+---
+
+Vagrant is available for macOS, Windows, and Linux. The official installer is the recommended method for most users — it places the `vagrant` binary on your system path and bundles all required dependencies. Before you install, confirm that `bsdtar` and `curl` are available on your PATH, as Vagrant requires both to run successfully.
+
+## System requirements
+
+- **bsdtar** must be available on your PATH
+- **curl** must be available on your PATH
+- A supported hypervisor such as [VirtualBox](https://www.virtualbox.org/) (free, works on all platforms), VMware, or Hyper-V
+
+<Warning>
+  RubyGem installation is no longer supported. If you have an older version of Vagrant installed via RubyGems, remove it before installing a current release.
+</Warning>
+
+## Install Vagrant
+
+<Tabs>
+  <Tab title="macOS">
+    <Steps>
+      <Step title="Install with Homebrew">
+        The easiest way to install Vagrant on macOS is with [Homebrew](https://brew.sh/):
+
+        ```bash
+        brew install --cask vagrant
+        ```
+      </Step>
+      <Step title="Or download the package">
+        Download the macOS `.dmg` package from the [Vagrant downloads page](https://developer.hashicorp.com/vagrant/downloads). Open the installer and follow the on-screen prompts.
+      </Step>
+      <Step title="Verify the installation">
+        Open a new terminal window and confirm Vagrant is on your PATH:
+
+        ```bash
+        vagrant --version
+        ```
+
+        You should see output like:
+
+        ```
+        Vagrant 2.4.10
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Windows">
+    <Steps>
+      <Step title="Download the installer">
+        Download the Windows `.msi` package from the [Vagrant downloads page](https://developer.hashicorp.com/vagrant/downloads).
+      </Step>
+      <Step title="Run the installer">
+        Double-click the `.msi` file and follow the installation wizard. The installer automatically adds `vagrant` to your system PATH.
+      </Step>
+      <Step title="Verify the installation">
+        Open a new Command Prompt or PowerShell window and run:
+
+        ```bash
+        vagrant --version
+        ```
+
+        <Tip>
+          If `vagrant` is not found, log out and back in to your Windows session. Windows sometimes requires a session restart to pick up PATH changes.
+        </Tip>
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Linux">
+    <Steps>
+      <Step title="Download the package">
+        Download the appropriate package for your Linux distribution from the [Vagrant downloads page](https://developer.hashicorp.com/vagrant/downloads). Packages are available for Debian/Ubuntu (`.deb`) and RHEL/CentOS (`.rpm`).
+      </Step>
+      <Step title="Install the package">
+        For Debian and Ubuntu:
+
+        ```bash
+        sudo dpkg -i vagrant_*.deb
+        ```
+
+        For RHEL, CentOS, and Fedora:
+
+        ```bash
+        sudo rpm -i vagrant_*.rpm
+        ```
+      </Step>
+      <Step title="Verify the installation">
+        Open a terminal and run:
+
+        ```bash
+        vagrant --version
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Handling multiple hypervisors
+
+Hypervisors often conflict with each other. If you have more than one installed, you may encounter errors when starting a virtual machine.
+
+<AccordionGroup>
+  <Accordion title="Linux: VirtualBox and KVM conflict">
+    If VirtualBox reports that VT-x is in use by another hypervisor, you need to add KVM to the kernel module denylist.
+
+    Find the module name:
+
+    ```bash
+    lsmod | grep kvm
+    ```
+
+    Add it to the denylist:
+
+    ```bash
+    echo 'blacklist kvm-intel' >> /etc/modprobe.d/blacklist.conf
+    ```
+
+    Restart your machine and try again.
+  </Accordion>
+  <Accordion title="Windows: VirtualBox and Hyper-V conflict">
+    Running VirtualBox with Hyper-V enabled can cause a blue screen. Disable Hyper-V before using VirtualBox.
+
+    On Windows 10 (elevated PowerShell):
+
+    ```powershell
+    Disable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All
+    ```
+
+    On Windows 11 (elevated PowerShell):
+
+    ```powershell
+    bcdedit /set hypervisorlaunchtype off
+    ```
+
+    You can also disable Hyper-V through **Apps and Features** > **Turn Windows features on or off** > uncheck **Hyper-V**. Reboot after making changes.
+  </Accordion>
+</AccordionGroup>
+
+## Uninstall Vagrant
+
+### Remove the Vagrant program
+
+<Tabs>
+  <Tab title="macOS">
+    Run the following as a superuser to remove the Vagrant binary and forget the package:
+
+    ```bash
+    sudo rm -rf /opt/vagrant /usr/local/bin/vagrant
+    sudo pkgutil --forget com.vagrant.vagrant
+    ```
+  </Tab>
+  <Tab title="Windows">
+    Open **Control Panel** > **Add/Remove Programs** and uninstall Vagrant.
+  </Tab>
+  <Tab title="Linux">
+    Run the following as a superuser:
+
+    ```bash
+    rm -rf /opt/vagrant
+    rm -f /usr/bin/vagrant
+    ```
+  </Tab>
+</Tabs>
+
+### Remove user data
+
+Removing user data deletes all boxes, plugins, license files, and stored state. Vagrant treats the next run as a fresh install.
+
+| Platform | User data path |
+|---|---|
+| macOS / Linux | `~/.vagrant.d` |
+| Windows | `C:\Users\YourUsername\.vagrant.d` |
+
+<Warning>
+  Back up your `~/.vagrant.d` directory before deleting it if you need to restore boxes or plugin data later.
+</Warning>
+
+## Next step
+
+With Vagrant installed, follow the [quickstart guide](/quickstart) to bring up your first virtual machine.

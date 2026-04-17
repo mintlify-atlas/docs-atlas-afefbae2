@@ -1,0 +1,120 @@
+---
+title: "Vagrant CLI reference: commands, flags, and patterns"
+description: "Complete reference for the Vagrant command-line interface: all major commands, machine-readable output, help flags, and shell auto-completion."
+---
+
+Vagrant exposes nearly all of its functionality through the `vagrant` CLI. Every action—from creating and provisioning machines to managing boxes and plugins—runs through subcommands like `vagrant up` or `vagrant box add`. This page explains common patterns that apply across all commands, then lists every major command with a short description and links to detailed reference pages.
+
+## Getting help
+
+Run `vagrant` with no arguments to print the list of available subcommands. Add `-h` to any command to see its synopsis and flags:
+
+```bash
+vagrant -h
+vagrant up -h
+vagrant box add -h
+```
+
+## Machine-readable output
+
+Pass `--machine-readable` to any command to get structured, parseable output. Each line is a comma-separated record in the format:
+
+```
+timestamp,target,type,data...
+```
+
+This is useful for scripts and CI pipelines where you need to parse Vagrant output programmatically:
+
+```bash
+vagrant status --machine-readable
+vagrant global-status --machine-readable
+```
+
+<Note>
+The machine-readable format is stable across Vagrant releases. Refer to the [machine-readable format documentation](https://developer.hashicorp.com/vagrant/docs/other/machine-readable) for field descriptions.
+</Note>
+
+## Shell auto-completion
+
+Vagrant supports tab completion for `bash` and `zsh`. Install completions once with:
+
+```bash
+vagrant autocomplete install --bash --zsh
+```
+
+After reloading your shell, pressing Tab after `vagrant ` will list available subcommands.
+
+## Common patterns
+
+Most commands accept an optional `[name|id]` argument to target a specific machine:
+
+- **name** — the machine name defined in your `Vagrantfile`. Must be run from the project directory.
+- **id** — the short ID shown by `vagrant global-status`. Can be used from any directory.
+
+```bash
+# Target by name (run inside the project directory)
+vagrant halt webserver
+
+# Target by global ID (run from anywhere)
+vagrant halt a1b2c3
+```
+
+## All commands
+
+<CardGroup cols={2}>
+  <Card title="up, halt, reload, and more" icon="terminal" href="/cli/up-halt-destroy">
+    Create, stop, reload, suspend, resume, destroy, and inspect machines. Also covers `init`, `provision`, `validate`, and `package`.
+  </Card>
+  <Card title="ssh and ssh-config" icon="key" href="/cli/ssh">
+    Open interactive shell sessions, run one-off commands, and export SSH configuration for use with external SSH clients.
+  </Card>
+  <Card title="box" icon="box" href="/cli/box">
+    Add, remove, list, update, prune, and repackage the base images that Vagrant uses to create machines.
+  </Card>
+  <Card title="snapshot" icon="camera" href="/cli/snapshot">
+    Save and restore point-in-time machine states using the push/pop stack or named save/restore workflow.
+  </Card>
+  <Card title="plugin" icon="plug" href="/cli/plugin">
+    Install, uninstall, update, list, and repair Vagrant plugins from RubyGems or local gem files.
+  </Card>
+</CardGroup>
+
+### Quick reference table
+
+| Command | Description |
+|---|---|
+| `vagrant init` | Create a new `Vagrantfile` in the current directory |
+| `vagrant up` | Create and start the machine defined in the `Vagrantfile` |
+| `vagrant halt` | Gracefully shut down a running machine |
+| `vagrant reload` | Restart a machine, re-reading the `Vagrantfile` |
+| `vagrant suspend` | Save machine state to disk and pause it |
+| `vagrant resume` | Resume a previously suspended machine |
+| `vagrant destroy` | Stop and permanently delete the machine and its resources |
+| `vagrant status` | Show state of machines in the current project |
+| `vagrant global-status` | Show state of all Vagrant machines on the system |
+| `vagrant provision` | Re-run provisioners on a running machine |
+| `vagrant validate` | Check that the `Vagrantfile` is syntactically valid |
+| `vagrant package` | Package a running machine into a reusable `.box` file |
+| `vagrant ssh` | Open an SSH session into a running machine |
+| `vagrant ssh-config` | Print SSH config for use with external SSH clients |
+| `vagrant box add` | Download and install a box |
+| `vagrant box list` | List all installed boxes |
+| `vagrant box update` | Update installed boxes to the latest version |
+| `vagrant box remove` | Uninstall a box |
+| `vagrant box prune` | Remove old versions of installed boxes |
+| `vagrant box outdated` | Check whether installed boxes have updates available |
+| `vagrant snapshot push` | Push the current machine state onto the snapshot stack |
+| `vagrant snapshot pop` | Restore the most recently pushed snapshot |
+| `vagrant snapshot save` | Save a named snapshot |
+| `vagrant snapshot restore` | Restore a named snapshot |
+| `vagrant snapshot list` | List all snapshots for a machine |
+| `vagrant snapshot delete` | Delete a named snapshot |
+| `vagrant plugin install` | Install a plugin |
+| `vagrant plugin uninstall` | Remove a plugin |
+| `vagrant plugin list` | List installed plugins |
+| `vagrant plugin update` | Update installed plugins |
+| `vagrant plugin expunge` | Remove all user-installed plugins and their data |
+
+## Environmental variables
+
+Several environment variables control Vagrant's global behavior, including `VAGRANT_HOME`, `VAGRANT_LOG`, and `VAGRANT_DEFAULT_PROVIDER`. See the [environmental variables reference](https://developer.hashicorp.com/vagrant/docs/other/environmental-variables) for the full list.

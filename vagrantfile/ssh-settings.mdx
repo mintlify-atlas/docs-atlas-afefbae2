@@ -1,0 +1,340 @@
+---
+title: "config.ssh SSH Settings Reference for Vagrant"
+description: "Complete reference for all config.ssh settings in the Vagrantfile, covering authentication, forwarding, connection tuning, and shell behavior."
+---
+
+The `config.ssh` namespace in the Vagrantfile controls how Vagrant connects to a running machine over SSH. Vagrant's defaults work for the vast majority of public boxes, but this reference covers every available setting so you can fine-tune authentication methods, port assignments, agent forwarding, and connection behavior for any environment.
+
+## Authentication settings
+
+<AccordionGroup>
+  <Accordion title="config.ssh.username">
+    **Type:** string | **Default:** `"vagrant"`
+
+    The username Vagrant uses to authenticate over SSH. Most public boxes are built with a `vagrant` user. Providers may override this value if they detect a more appropriate user.
+
+    ```ruby
+    config.ssh.username = "ubuntu"
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.password">
+    **Type:** string
+
+    A password for SSH authentication. Key-based authentication is strongly recommended instead. When a password is set and `config.ssh.insert_key` is `true`, Vagrant automatically inserts a new keypair to replace the insecure default.
+
+    ```ruby
+    config.ssh.password = "mysecretpassword"
+    ```
+
+    <Warning>
+      Storing plain-text passwords in a Vagrantfile committed to version control is a security risk. Use `config.vagrant.sensitive` to mask the value in output, or prefer private key authentication.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="config.ssh.private_key_path">
+    **Type:** string or array of strings
+
+    Path(s) to the private key(s) for SSH authentication. Defaults to Vagrant's built-in insecure key, which all public boxes use. Provide an array to try multiple keys — useful when rotating from a bootstrap key to a more secure one.
+
+    ```ruby
+    config.ssh.private_key_path = "~/.ssh/my_project_key"
+
+    # Multiple keys
+    config.ssh.private_key_path = [
+      "~/.vagrant.d/insecure_private_key",
+      "~/.ssh/my_project_key"
+    ]
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.insert_key">
+    **Type:** boolean | **Default:** `true`
+
+    When `true`, Vagrant automatically generates and inserts a new keypair into the machine if it detects the default insecure key. Set to `false` to keep the default insecure key or if you manage your own keys.
+
+    ```ruby
+    config.ssh.insert_key = false
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.key_type">
+    **Type:** string or symbol | **Default:** `:auto`
+
+    The key type to generate when replacing the insecure key. Supported values: `:ed25519`, `:ecdsa256`, `:ecdsa384`, `:ecdsa521`, `:rsa`, `:auto`. When `:auto`, Vagrant picks the best type supported by the guest SSH server.
+  </Accordion>
+
+  <Accordion title="config.ssh.keys_only">
+    **Type:** boolean | **Default:** `true`
+
+    When `true`, Vagrant uses only its own provided private keys and ignores any keys stored in `ssh-agent`.
+
+    ```ruby
+    config.ssh.keys_only = false  # allow ssh-agent keys
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Host and port settings
+
+<AccordionGroup>
+  <Accordion title="config.ssh.host">
+    **Type:** string
+
+    The hostname or IP address to SSH into. Normally left empty because the provider supplies this value automatically.
+
+    ```ruby
+    config.ssh.host = "192.168.56.10"
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.port">
+    **Type:** integer | **Default:** `22`
+
+    The port to connect to over SSH.
+
+    ```ruby
+    config.ssh.port = 2222
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.guest_port">
+    **Type:** integer | **Default:** `22`
+
+    The port on the guest machine where SSH is listening. Some providers use this to detect forwarded ports. For example, if this is `22` and Vagrant sees a forwarded port from host `4567` to guest `22`, it will try port `4567` to connect.
+  </Accordion>
+</AccordionGroup>
+
+## Connection settings
+
+<AccordionGroup>
+  <Accordion title="config.ssh.connect_retries">
+    **Type:** integer | **Default:** `5`
+
+    Number of times Vagrant retries when establishing an SSH connection to the guest.
+  </Accordion>
+
+  <Accordion title="config.ssh.connect_retry_delay">
+    **Type:** numeric | **Default:** `2`
+
+    Seconds to wait between connection attempts.
+  </Accordion>
+
+  <Accordion title="config.ssh.connect_timeout">
+    **Type:** integer | **Default:** `15`
+
+    Seconds to wait for a single SSH connection attempt before considering it failed.
+  </Accordion>
+
+  <Accordion title="config.ssh.keep_alive">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, Vagrant sends SSH keep-alive packets every 5 seconds to prevent idle connections from being dropped.
+
+    ```ruby
+    config.ssh.keep_alive = true
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.compression">
+    **Type:** boolean | **Default:** `true`
+
+    When `true`, Vagrant passes `Compression=yes` to the SSH client. Set to `false` to disable SSH compression.
+  </Accordion>
+
+  <Accordion title="config.ssh.config">
+    **Type:** string
+
+    Path to a custom `ssh_config` file. Use this to apply SSH options that are not exposed as individual Vagrant settings.
+
+    ```ruby
+    config.ssh.config = "~/.ssh/vagrant_config"
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.proxy_command">
+    **Type:** string
+
+    A shell command that proxies the SSH connection. `%h` is replaced by the host and `%p` by the port.
+
+    ```ruby
+    config.ssh.proxy_command = "ssh bastion.example.com -W %h:%p"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Forwarding and environment
+
+<AccordionGroup>
+  <Accordion title="config.ssh.forward_agent">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, enables SSH agent forwarding. This lets you use keys from your local `ssh-agent` inside the guest machine.
+
+    ```ruby
+    config.ssh.forward_agent = true
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.forward_x11">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, enables X11 forwarding so graphical applications running on the guest are displayed on the host.
+
+    ```ruby
+    config.ssh.forward_x11 = true
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.forward_env">
+    **Type:** array of strings
+
+    Host environment variable names to forward to the guest. Corresponds to OpenSSH's `SendEnv` parameter.
+
+    ```ruby
+    config.ssh.forward_env = ["RAILS_ENV", "DATABASE_URL"]
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.extra_args">
+    **Type:** array of strings
+
+    Additional arguments passed directly to the `ssh` executable. Use this for options not covered by dedicated settings, such as enabling tunnels.
+
+    ```ruby
+    config.ssh.extra_args = ["-6"]                         # force IPv6
+    config.ssh.extra_args = ["-L", "8008:localhost:80"]    # local tunnel
+    ```
+
+    <Note>
+      `extra_args` affects only interactive `vagrant ssh` sessions and direct invocations of the SSH executable. Internal non-interactive SSH connections (used for provisioning) are not affected.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+## Shell and sudo settings
+
+<AccordionGroup>
+  <Accordion title="config.ssh.shell">
+    **Type:** string | **Default:** `"bash -l"`
+
+    The shell to use when Vagrant executes SSH commands.
+
+    ```ruby
+    config.ssh.shell = "zsh -l"
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.sudo_command">
+    **Type:** string | **Default:** `"sudo -E -H %c"`
+
+    The command Vagrant uses when running a command with `sudo`. `%c` is replaced with the command being executed.
+
+    ```ruby
+    config.ssh.sudo_command = "sudo -E %c"
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.pty">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, Vagrant uses a PTY for provisioning. This is an advanced option for rare edge cases.
+
+    <Warning>
+      Enabling PTY breaks several Vagrant features. Command output is not streamed to the UI — it is delivered all at once when the command finishes. Only enable this if absolutely necessary.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="config.ssh.export_command_template">
+    **Type:** string | **Default:** `'export %ENV_KEY%="%ENV_VALUE%"'`
+
+    The template used to generate environment variable exports in the active SSH session. Useful when working with Bourne-incompatible shells like C shell.
+
+    ```ruby
+    config.ssh.export_command_template = 'setenv %ENV_KEY% "%ENV_VALUE%"'
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Host key verification
+
+<AccordionGroup>
+  <Accordion title="config.ssh.verify_host_key">
+    **Type:** string or symbol | **Default:** `:never`
+
+    Controls host key verification behavior. Options map to `net-ssh` verifier classes:
+
+    | Value | Behavior |
+    |---|---|
+    | `:never` | No host key verification (default) |
+    | `:accept_new` | Accept new keys; reject changed keys |
+    | `:accept_new_or_local_tunnel` | Accept new keys and keys for local tunnels |
+    | `:always` | Always verify against known hosts |
+
+    ```ruby
+    config.ssh.verify_host_key = :accept_new
+    ```
+  </Accordion>
+
+  <Accordion title="config.ssh.dsa_authentication">
+    **Type:** boolean | **Default:** `true`
+
+    When `false`, Vagrant omits `DSAAuthentication=yes` from the SSH command. Disable this if the SSH server does not support DSA key authentication.
+  </Accordion>
+
+  <Accordion title="config.ssh.disable_deprecated_algorithms">
+    **Type:** boolean | **Default:** `false`
+
+    When `true`, Vagrant does not configure the SSH client to allow `ssh-rsa` key types and legacy host key algorithms. Enable this to enforce modern algorithm requirements.
+  </Accordion>
+</AccordionGroup>
+
+## Common configuration examples
+
+<Tabs>
+  <Tab title="Agent forwarding">
+    Forward your local SSH agent so you can use your host keys (for example, to clone private Git repositories) from inside the guest:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box = "hashicorp/bionic64"
+
+      config.ssh.forward_agent = true
+    end
+    ```
+  </Tab>
+  <Tab title="Custom key">
+    Use a project-specific private key instead of the default insecure key:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box = "hashicorp/bionic64"
+
+      config.ssh.insert_key       = false
+      config.ssh.private_key_path = "./keys/my_project_key"
+    end
+    ```
+  </Tab>
+  <Tab title="Proxy jump">
+    Connect to the guest through a bastion (jump) host:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box = "hashicorp/bionic64"
+
+      config.ssh.proxy_command = "ssh -W %h:%p user@bastion.example.com"
+    end
+    ```
+  </Tab>
+  <Tab title="Environment forwarding">
+    Forward specific host environment variables to the guest:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box = "hashicorp/bionic64"
+
+      config.ssh.forward_env = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]
+    end
+    ```
+  </Tab>
+</Tabs>

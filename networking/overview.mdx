@@ -1,0 +1,67 @@
+---
+title: 'Vagrant networking: forwarded ports, private and public'
+description: 'Learn how Vagrant handles networking for virtual machines, including forwarded ports, private networks, and public bridged networks.'
+---
+
+Vagrant provides three high-level networking primitives that let you connect your guest machine to the outside world without touching low-level provider settings. Each type is configured in your `Vagrantfile` using `config.vm.network`, and all three work consistently across providers like VirtualBox and VMware, so you can share a single `Vagrantfile` across teams and machines.
+
+## Network types
+
+<CardGroup cols={3}>
+  <Card title="Forwarded ports" icon="arrow-right-arrow-left" href="/networking/forwarded-ports">
+    Map a port on your host to a port on the guest. Use this to reach a web server or database running inside the VM from your local browser or tools.
+  </Card>
+  <Card title="Private network" icon="lock" href="/networking/private-network">
+    Give the guest an address that is reachable only from the host and other VMs on the same private network. Supports DHCP, static IPv4, and static IPv6.
+  </Card>
+  <Card title="Public network" icon="globe">
+    Bridge the guest to your physical network so it gets an IP address alongside your real machines. Useful for testing on a LAN, but exposes the VM to other devices.
+  </Card>
+</CardGroup>
+
+## Configuring a network
+
+All networks are declared with `config.vm.network` inside your `Vagrantfile`. The first argument is the network type identifier and the remaining arguments are options specific to that type.
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+end
+```
+
+You can add multiple `config.vm.network` calls to enable more than one network. Vagrant activates them in the order they appear during `vagrant up` or `vagrant reload`.
+
+## Setting a hostname
+
+Use `config.vm.hostname` to assign a hostname to the VM. Vagrant writes the entry to `/etc/hosts` on the guest automatically.
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.hostname = "myapp.local"
+end
+```
+
+If you also define a private or public network with an IP, you can attach the hostname to that interface by passing `hostname: true`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.hostname = "myapp.local"
+  config.vm.network "private_network", ip: "192.168.50.10", hostname: true
+end
+```
+
+## NAT and provider assumptions
+
+Vagrant assumes a NAT device is available on the first network adapter (`eth0` in VirtualBox). This adapter is how Vagrant communicates with the guest internally and should not be removed or reconfigured outside of Vagrant.
+
+<Warning>
+  Modifying the first network adapter manually can prevent Vagrant from reaching the guest machine. Stick to the high-level networking options until you are comfortable with your provider's networking model.
+</Warning>
+
+## Advanced configuration
+
+When the high-level options are too coarse, most providers expose additional network settings through [provider-specific configuration](/providers/overview). Refer to your provider's documentation for details on interface ordering, adapter types, and other low-level controls.
+
+<Tip>
+  Start with forwarded ports or a private network for local development. Reserve public networks for integration testing where you need the VM to appear on your physical LAN.
+</Tip>

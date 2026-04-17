@@ -1,0 +1,364 @@
+---
+title: "Vagrant machine lifecycle: up, halt, reload, destroy"
+description: "Complete reference for vagrant up, halt, reload, suspend, resume, destroy, status, global-status, provision, validate, package, and init."
+---
+
+Vagrant's machine lifecycle commands cover everything from creating a new environment (`vagrant up`) to permanently removing it (`vagrant destroy`), plus all the states in between: stopping, reloading, suspending, and resuming. This page also documents the inspection commands (`status`, `global-status`), the provisioning and validation commands, and the packaging and initialization commands used to bootstrap and distribute Vagrant environments.
+
+<AccordionGroup>
+
+  <Accordion title="vagrant init" icon="file-plus">
+
+    **Synopsis:** `vagrant init [name [url]]`
+
+    Initializes the current directory as a Vagrant environment by creating a `Vagrantfile`. If a `Vagrantfile` already exists, the command will error unless `--force` is used.
+
+    Pass a box name as the first argument to pre-fill `config.vm.box` in the generated file. Pass a URL as the second argument to pre-fill `config.vm.box_url`.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `--box-version VERSION` | Version or constraint for `config.vm.box_version` | latest |
+    | `--force` | Overwrite an existing `Vagrantfile` | off |
+    | `--minimal` / `-m` | Generate a minimal file without instructional comments | off |
+    | `--output FILE` | Write the `Vagrantfile` to `FILE` instead of the current directory; use `-` for stdout | `Vagrantfile` |
+    | `--template FILE` | Use a custom ERB template to generate the `Vagrantfile` | built-in |
+
+    **Examples**
+
+    ```bash
+    # Basic — create a Vagrantfile pointing to hashicorp/bionic64
+    vagrant init hashicorp/bionic64
+
+    # Minimal file, no comments
+    vagrant init -m hashicorp/bionic64
+
+    # Overwrite an existing Vagrantfile
+    vagrant init -f hashicorp/bionic64
+
+    # Specify a direct box URL
+    vagrant init my-company-box https://example.com/my-company.box
+
+    # Lock to a version constraint
+    vagrant init --box-version "> 0.1.5" hashicorp/bionic64
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant up" icon="play">
+
+    **Synopsis:** `vagrant up [name|id]`
+
+    Creates and configures guest machines according to the `Vagrantfile`. This is the primary command in Vagrant; every environment starts here. On the first run it downloads the box (if not already cached), creates the virtual machine, runs the configured provisioners, and sets up synced folders and networking.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `--[no-]destroy-on-error` | Destroy a newly created machine if a fatal error occurs during the first `up` | on |
+    | `--[no-]install-provider` | Auto-install the requested provider if it is not present | on |
+    | `--[no-]parallel` | Bring multiple machines up in parallel (provider must support it) | off |
+    | `--provider x` | Use the specified provider | `virtualbox` |
+    | `--[no-]provision` | Force or prevent provisioners from running | auto |
+    | `--provision-with x,y,z` | Run only the listed provisioners by name | all |
+
+    **Examples**
+
+    ```bash
+    # Bring up the default machine
+    vagrant up
+
+    # Bring up a specific machine in a multi-machine project
+    vagrant up webserver
+
+    # Bring up using a specific provider
+    vagrant up --provider vmware_fusion
+
+    # Bring up and force provisioners to run
+    vagrant up --provision
+
+    # Bring up and run only the shell provisioner
+    vagrant up --provision-with shell
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant halt" icon="stop">
+
+    **Synopsis:** `vagrant halt [name|id]`
+
+    Shuts down a running machine. Vagrant first attempts a graceful shutdown using the guest OS mechanism:
+
+    - On Linux guests it runs `systemctl poweroff`, falling back to the `shutdown` command.
+    - If graceful shutdown fails or `--force` is specified, Vagrant cuts power to the machine immediately.
+
+    The machine's disk and configuration are preserved; run `vagrant up` to start it again.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `-f` / `--force` | Skip graceful shutdown and cut power immediately | off |
+
+    **Examples**
+
+    ```bash
+    vagrant halt
+    vagrant halt webserver
+    vagrant halt --force
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant reload" icon="rotate">
+
+    **Synopsis:** `vagrant reload [name|id]`
+
+    Equivalent to running `vagrant halt` followed by `vagrant up`. Use this whenever you edit the `Vagrantfile` and need the changes to take effect (for example, changing port forwarding rules or memory allocation).
+
+    Provisioners do not run again by default. Pass `--provision` to force them.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `--provision` | Force all provisioners to run after restart | off |
+    | `--provision-with x,y,z` | Run only the listed provisioners after restart | all |
+
+    **Examples**
+
+    ```bash
+    vagrant reload
+    vagrant reload webserver
+
+    # Reload and re-run provisioners
+    vagrant reload --provision
+
+    # Reload and run only the shell provisioner
+    vagrant reload --provision-with shell
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant suspend" icon="pause">
+
+    **Synopsis:** `vagrant suspend [name|id]`
+
+    Saves the exact point-in-time state of the machine to disk (RAM contents and all) and pauses it. When you resume, the machine continues from where it left off—no boot sequence required.
+
+    While suspended, the machine consumes no CPU or RAM on the host, but does use additional disk space to store the saved RAM image.
+
+    **Examples**
+
+    ```bash
+    vagrant suspend
+    vagrant suspend webserver
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant resume" icon="circle-play">
+
+    **Synopsis:** `vagrant resume [name|id]`
+
+    Resumes a suspended machine, restoring it to exactly the state it was in when `vagrant suspend` was called.
+
+    Provisioners do not run again by default.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `--provision` | Force provisioners to run after resuming | off |
+    | `--provision-with x,y,z` | Run only the listed provisioners after resuming | all |
+
+    **Examples**
+
+    ```bash
+    vagrant resume
+    vagrant resume webserver
+    vagrant resume --provision
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant destroy" icon="trash">
+
+    **Synopsis:** `vagrant destroy [name|id]`
+
+    Stops the running machine and permanently deletes all resources (the virtual disk, network interfaces, and other provider-managed resources) that were created by `vagrant up`. After this command, your host machine is returned to the state it was in before the first `vagrant up`.
+
+    <Warning>
+    `vagrant destroy` does not remove the box that was downloaded to create the machine. The `.box` file remains cached in `~/.vagrant.d/boxes`. Run `vagrant box remove` to remove it and reclaim disk space.
+    </Warning>
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `-f` / `--force` | Skip the confirmation prompt | off |
+    | `--[no-]parallel` | Destroy multiple machines in parallel (provider must support it) | off |
+    | `-g` / `--graceful` | Attempt a graceful shutdown before destroying | off |
+
+    **Examples**
+
+    ```bash
+    vagrant destroy
+    vagrant destroy webserver
+    vagrant destroy --force
+    vagrant destroy --force --parallel
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant status" icon="circle-info">
+
+    **Synopsis:** `vagrant status [name|id]`
+
+    Reports the state (running, poweroff, not created, saved, etc.) of machines managed by the current Vagrant project. Run this inside a project directory.
+
+    **Examples**
+
+    ```bash
+    vagrant status
+    # Current machine states:
+    # default                   running (virtualbox)
+
+    # In a multi-machine project
+    vagrant status
+    # node1     running (virtualbox)
+    # node2     poweroff (virtualbox)
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant global-status" icon="earth">
+
+    **Synopsis:** `vagrant global-status`
+
+    Reports the state of every Vagrant environment for the current user, across all projects and directories. The output includes a short ID that can be used with any Vagrant command that accepts `[name|id]`.
+
+    <Note>
+    `global-status` reads from a local cache and does not actively probe machines. The cache can become stale (for example, after rebooting the host). Run with `--prune` to remove invalid entries.
+    </Note>
+
+    **Flags**
+
+    | Flag | Description |
+    |---|---|
+    | `--prune` | Remove entries for environments that no longer exist (slower) |
+
+    **Examples**
+
+    ```bash
+    vagrant global-status
+    # id       name   provider   state   directory
+    # a1b2c3   web    virtualbox running /Users/user/projects/myapp
+
+    # Use the ID to halt from any directory
+    vagrant halt a1b2c3
+
+    # Prune stale entries
+    vagrant global-status --prune
+    ```
+
+    If an environment is missing from the output, destroy it and re-create it with `vagrant up`:
+
+    ```bash
+    vagrant destroy a1b2c3
+    vagrant up
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant provision" icon="gear">
+
+    **Synopsis:** `vagrant provision [vm-name]`
+
+    Runs the configured provisioners against the running machine without stopping or restarting it. Useful for iterative development—edit a shell script or Ansible playbook, run `vagrant provision`, and observe the result.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `--provision-with x,y,z` | Run only the listed provisioners | all |
+
+    **Examples**
+
+    ```bash
+    vagrant provision
+
+    # Run only the shell provisioner
+    vagrant provision --provision-with shell
+
+    # Target a specific machine in a multi-machine project
+    vagrant provision webserver
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant validate" icon="check">
+
+    **Synopsis:** `vagrant validate`
+
+    Parses and validates the `Vagrantfile` in the current directory. Reports syntax errors and configuration problems before you attempt to bring up a machine.
+
+    **Flags**
+
+    | Flag | Description |
+    |---|---|
+    | `--ignore-provider` | Skip provider-specific configuration validation |
+
+    **Examples**
+
+    ```bash
+    vagrant validate
+    # Vagrantfile validated successfully.
+
+    vagrant validate --ignore-provider
+    # ==> default: Ignoring provider config for validation...
+    # Vagrantfile validated successfully.
+    ```
+
+  </Accordion>
+
+  <Accordion title="vagrant package" icon="box-archive">
+
+    **Synopsis:** `vagrant package [name|id]`
+
+    Packages a currently running VirtualBox or Hyper-V machine into a reusable `.box` file in the current directory. Other providers may support this command depending on their implementation.
+
+    **Flags**
+
+    | Flag | Description | Default |
+    |---|---|---|
+    | `--base NAME` | Package a VirtualBox machine managed by VirtualBox (not Vagrant), by name or UUID | — |
+    | `--output NAME` | Filename for the resulting `.box` file | `package.box` |
+    | `--include x,y,z` | Embed additional files in the box archive | — |
+    | `--info path/to/info.json` | Embed a JSON metadata file displayed by `vagrant box list -i` | — |
+    | `--vagrantfile FILE` | Embed a `Vagrantfile` that is loaded when the box is used (not when `vagrant init` is run) | — |
+
+    **Examples**
+
+    ```bash
+    # Package the current machine
+    vagrant package
+
+    # Package with a custom output name
+    vagrant package --output my-team-base.box
+
+    # Package a VirtualBox-managed VM by UUID
+    vagrant package --base "12345678-abcd-..."
+
+    # Package with an embedded Vagrantfile
+    vagrant package --vagrantfile Vagrantfile.pkg
+    ```
+
+    <Note>
+    The `--vagrantfile` option embeds a `Vagrantfile` that is read as part of the Vagrant load order when someone uses the box—not when they run `vagrant init`. See the [Vagrantfile load order](https://developer.hashicorp.com/vagrant/docs/vagrantfile/#load-order) for details.
+    </Note>
+
+  </Accordion>
+
+</AccordionGroup>

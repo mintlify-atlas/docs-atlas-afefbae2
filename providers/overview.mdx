@@ -1,0 +1,122 @@
+---
+title: "Vagrant providers: choose, configure, and install them"
+description: "Providers are the backends Vagrant uses to run machines. Learn how to pick a provider, set a default, configure Vagrantfile options, and install plugins."
+---
+
+Vagrant ships with built-in support for three providers — VirtualBox, Hyper-V, and Docker — and can work with many others through plugins. A _provider_ is the virtualization or containerization platform that runs your machine; Vagrant acts as a unified workflow on top of it, so the same `Vagrantfile` and commands work regardless of which provider you use.
+
+## What is a provider?
+
+Every `vagrant up` starts a machine on a provider. The provider is responsible for creating, suspending, resuming, and destroying that machine. Vagrant translates your `Vagrantfile` configuration into provider-specific API calls, so you write your environment description once and Vagrant handles the rest.
+
+Boxes are provider-specific. A box built for VirtualBox cannot run on Hyper-V, and vice versa. When you list boxes with `vagrant box list`, Vagrant shows the provider in parentheses:
+
+```bash
+vagrant box list
+# hashicorp/bionic64  (virtualbox, 1.0.282)
+# hashicorp/bionic64  (hyperv, 1.0.282)
+```
+
+You can have boxes with the same name for different providers installed side by side.
+
+## Choosing a provider
+
+### Using the `--provider` flag
+
+Pass `--provider` to `vagrant up` to explicitly select which provider to use:
+
+```bash
+vagrant up --provider virtualbox
+```
+
+You only need the flag for `up`. After the machine is running, Vagrant tracks which provider backs it, so `vagrant halt`, `vagrant destroy`, and other commands work without specifying the provider again.
+
+### Using `VAGRANT_DEFAULT_PROVIDER`
+
+Set the environment variable `VAGRANT_DEFAULT_PROVIDER` to avoid typing `--provider` on every `vagrant up`. For example, on Linux or macOS:
+
+```bash
+export VAGRANT_DEFAULT_PROVIDER=virtualbox
+vagrant up
+```
+
+### Provider preference order in a Vagrantfile
+
+When neither flag nor environment variable is set, Vagrant walks through the following decision process to find a provider:
+
+1. `--provider` flag on `vagrant up` — highest priority.
+2. `VAGRANT_DEFAULT_PROVIDER` environment variable.
+3. The first `config.vm.provider` block in the Vagrantfile that refers to a usable, installed provider.
+4. The first installed provider plugin that reports itself as usable (built-in providers have a defined priority).
+5. Error if no usable provider is found.
+
+You can use empty `config.vm.provider` blocks at the top of your Vagrantfile to declare a preferred order without adding any provider-specific settings:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  # Prefer VirtualBox, then fall back to Hyper-V
+  config.vm.provider "virtualbox"
+  config.vm.provider "hyperv"
+end
+```
+
+### Provider-specific configuration
+
+Each provider accepts its own configuration block inside the Vagrantfile. Vagrant silently ignores blocks for providers that are not installed, so Vagrantfiles stay portable:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus   = 2
+  end
+end
+```
+
+You can also use a provider block to override top-level settings only when that provider is active:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.provider "hyperv" do |h, override|
+    override.vm.box = "hashicorp/bionic64-hyperv"
+    h.memory = 2048
+  end
+end
+```
+
+## Installing providers
+
+VirtualBox, Hyper-V, and Docker are bundled with Vagrant and need no separate plugin installation. Other providers are distributed as Vagrant plugins. Install a provider plugin with `vagrant plugin install`:
+
+```bash
+vagrant plugin install vagrant-vmware-desktop
+```
+
+After installation, the provider is immediately available for use with `--provider` or `VAGRANT_DEFAULT_PROVIDER`.
+
+<Note>
+  Beta and pre-release builds of provider backends (such as VirtualBox beta releases) are not officially supported and may behave unpredictably.
+</Note>
+
+## Available providers
+
+<CardGroup cols={2}>
+  <Card title="VirtualBox" icon="box" href="/providers/virtualbox">
+    Free, cross-platform hypervisor. The default provider for Vagrant. Runs on Linux, macOS, and Windows.
+  </Card>
+  <Card title="Docker" icon="docker" href="/providers/docker">
+    Run development environments inside Docker containers instead of full virtual machines. Includes automatic host-VM support on macOS and Windows.
+  </Card>
+  <Card title="Hyper-V" icon="server" href="/providers/hyperv">
+    Native Windows hypervisor available on Windows 8.1 and later. Requires administrative privileges to manage VMs.
+  </Card>
+  <Card title="Custom providers" icon="plug" href="/providers/custom">
+    Build your own provider plugin using Vagrant's plugin API to support any virtualization or cloud platform.
+  </Card>
+</CardGroup>

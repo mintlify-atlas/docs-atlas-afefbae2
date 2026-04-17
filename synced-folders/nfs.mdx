@@ -1,0 +1,245 @@
+---
+title: 'NFS synced folders for faster Vagrant file sharing'
+description: 'Use NFS-backed synced folders in Vagrant to overcome VirtualBox shared folder performance limits, with full options reference and sudoers configuration.'
+---
+
+Vagrant's default VirtualBox shared folders can become a bottleneck for projects that do a lot of file I/O — think npm installs, Composer updates, or compilation steps that read and write thousands of small files. NFS (Network File System) solves this by mounting the folder over a real network protocol, which on Linux and macOS hosts can be dramatically faster than the VirtualBox shared folder driver.
+
+## When to use NFS
+
+NFS is the right choice when:
+
+- You are on a **Linux or macOS host** (NFS is not supported on Windows hosts — Vagrant ignores NFS requests there)
+- Your project does heavy file I/O and you notice slowness inside the VM
+- You need bi-directional sync with lower latency than VirtualBox shared folders
+
+<Warning>
+  NFS synced folders do not work on Windows hosts. Vagrant silently ignores the `type: "nfs"` option on Windows and falls back to the default backend.
+</Warning>
+
+## Requirements
+
+<Steps>
+  <Step title="Install nfsd on the host">
+    The host machine must have `nfsd` (the NFS server daemon) installed.
+
+    - **macOS**: `nfsd` is pre-installed.
+    - **Linux**: Install the NFS server package for your distribution. For example, on Ubuntu/Debian:
+
+    ```bash
+    sudo apt-get install nfs-kernel-server
+    ```
+  </Step>
+  <Step title="Install NFS client on the guest">
+    The guest VM also needs an NFS client. Vagrant can install it automatically on many operating systems; if it cannot, it will tell you what to install.
+  </Step>
+  <Step title="Configure a private network (VirtualBox only)">
+    When using the VirtualBox provider, you must also configure a private network. VirtualBox's built-in NAT adapter cannot carry NFS traffic:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "private_network", type: "dhcp"
+      config.vm.synced_folder ".", "/vagrant", type: "nfs"
+    end
+    ```
+
+    VMware and other providers do not have this restriction.
+  </Step>
+</Steps>
+
+## Enabling NFS
+
+Add `type: "nfs"` to any `config.vm.synced_folder` call:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder ".", "/vagrant", type: "nfs"
+end
+```
+
+If you are updating an existing, running machine, run `vagrant reload` to apply the change.
+
+## NFS folder options
+
+These options are specific to the NFS backend and go alongside the `type` option:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `nfs_version` | string or integer | `3` | NFS protocol version to use when mounting on the guest. |
+| `nfs_udp` | boolean | `true` | Use UDP as the transport. Faster, but not valid for NFSv4. |
+| `nfs_export` | boolean | `true` | Let Vagrant manage `/etc/exports` automatically. Set to `false` if you maintain your own exports file. |
+
+### Using NFSv4
+
+UDP is not a valid transport for NFSv4. If you specify version 4, always disable UDP:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder ".", "/vagrant",
+    type: "nfs",
+    nfs_version: 4,
+    nfs_udp: false
+end
+```
+
+<Warning>
+  Mixing NFSv4 with `nfs_udp: true` will result in a mount error such as `mount.nfs: an incorrect mount option was specified`. Always set `nfs_udp: false` when using version 4.
+</Warning>
+
+## Custom mount options
+
+Pass additional `mount` command arguments with `mount_options`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.synced_folder ".", "/vagrant",
+    type: "nfs",
+    mount_options: ['actimeo=2']
+end
+```
+
+This produces a mount command similar to:
+
+```bash
+mount -o 'actimeo=2' 172.28.128.1:'/path/to/vagrantfile' /vagrant
+```
+
+You can also customize the `/etc/exports` entry on the host using OS-specific keys. Note that these **completely replace** the defaults Vagrant would otherwise generate:
+
+```ruby
+config.vm.synced_folder ".", "/vagrant",
+  type: "nfs",
+  linux__nfs_options: ['rw', 'no_subtree_check', 'all_squash', 'async']
+```
+
+## Global NFS settings
+
+Configure NFS globally in your Vagrantfile with `config.nfs`:
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `functional` | boolean | `true` | Set to `false` to disable NFS entirely. Folders that request NFS will error. |
+| `map_uid` | integer | current user | UID to map all read/write requests to on the host. |
+| `map_gid` | integer | current user | GID to map all read/write requests to on the host. |
+| `verify_installed` | boolean | `true` | Set to `false` to skip the NFS installation check. |
+
+## Root privilege and sudoers configuration
+
+Vagrant must modify `/etc/exports` and control the NFS daemon as root. The first time you `vagrant up` with NFS, you may be prompted for your password via `sudo`.
+
+To avoid typing your password on every `vagrant up`, add the appropriate entries to `/etc/sudoers`. Always edit this file with `visudo` to protect against syntax errors.
+
+<AccordionGroup>
+  <Accordion title="macOS sudoers">
+    ```
+    Cmnd_Alias VAGRANT_EXPORTS_ADD = /usr/bin/tee -a /etc/exports
+    Cmnd_Alias VAGRANT_NFSD = /sbin/nfsd ^(restart|status|update)$
+    Cmnd_Alias VAGRANT_EXPORTS_REMOVE = /usr/bin/sed -E -e /*/ d -ibak /etc/exports
+    %admin ALL=(root) NOPASSWD: VAGRANT_EXPORTS_ADD, VAGRANT_NFSD, VAGRANT_EXPORTS_REMOVE
+    ```
+  </Accordion>
+  <Accordion title="Linux (Ubuntu/Debian) sudoers">
+    ```
+    Cmnd_Alias VAGRANT_EXPORTS_CHOWN = /bin/chown 0\:0 /tmp/vagrant-exports
+    Cmnd_Alias VAGRANT_EXPORTS_MV = /bin/mv -f /tmp/vagrant-exports /etc/exports
+    Cmnd_Alias VAGRANT_NFSD_CHECK = /etc/init.d/nfs-kernel-server status
+    Cmnd_Alias VAGRANT_NFSD_START = /etc/init.d/nfs-kernel-server start
+    Cmnd_Alias VAGRANT_NFSD_APPLY = /usr/sbin/exportfs -ar
+    %sudo ALL=(root) NOPASSWD: VAGRANT_EXPORTS_CHOWN, VAGRANT_EXPORTS_MV, VAGRANT_NFSD_CHECK, VAGRANT_NFSD_START, VAGRANT_NFSD_APPLY
+    ```
+  </Accordion>
+  <Accordion title="Fedora Linux sudoers">
+    ```
+    Cmnd_Alias VAGRANT_EXPORTS_CHOWN = /bin/chown 0\:0 /tmp/vagrant-exports
+    Cmnd_Alias VAGRANT_EXPORTS_MV = /bin/mv -f /tmp/vagrant-exports /etc/exports
+    Cmnd_Alias VAGRANT_NFSD_CHECK = /usr/bin/systemctl status --no-pager nfs-server.service
+    Cmnd_Alias VAGRANT_NFSD_START = /usr/bin/systemctl start nfs-server.service
+    Cmnd_Alias VAGRANT_NFSD_APPLY = /usr/sbin/exportfs -ar
+    %vagrant ALL=(root) NOPASSWD: VAGRANT_EXPORTS_CHOWN, VAGRANT_EXPORTS_MV, VAGRANT_NFSD_CHECK, VAGRANT_NFSD_START, VAGRANT_NFSD_APPLY
+    ```
+  </Accordion>
+  <Accordion title="SUSE Linux sudoers">
+    ```
+    Cmnd_Alias VAGRANT_CHOWN = /usr/bin/chown 0\:0 /tmp/vagrant-exports
+    Cmnd_Alias VAGRANT_MV = /usr/bin/mv -f /tmp/vagrant-exports /etc/exports
+    Cmnd_Alias VAGRANT_START = /usr/bin/systemctl start --no-pager nfs-server
+    Cmnd_Alias VAGRANT_STATUS = /usr/bin/systemctl status --no-pager nfs-server
+    Cmnd_Alias VAGRANT_APPLY = /usr/sbin/exportfs -ar
+    %vagrant ALL=(root) NOPASSWD: VAGRANT_CHOWN, VAGRANT_MV, VAGRANT_START, VAGRANT_STATUS, VAGRANT_APPLY
+    ```
+  </Accordion>
+</AccordionGroup>
+
+You can also place these rules in `/etc/sudoers.d/vagrant-syncedfolders` instead of editing the main sudoers file directly, as long as `/etc/sudoers.d` is included by your sudoers configuration.
+
+<Tip>
+  These sudoers entries require Vagrant 1.7.3 or later. Adjust the group name (`%admin`, `%sudo`, `%vagrant`) to match the group your user belongs to on your system.
+</Tip>
+
+## Alternatives to NFS
+
+If NFS is not available or suitable for your environment, consider these other sync backends:
+
+<Note>
+  **rsync** — A one-way sync from host to guest, performed at `vagrant up` and `vagrant reload`. Works on all platforms including Windows. Use `vagrant rsync-auto` to watch for changes automatically. Good when you don't need the guest to write changes back to the host.
+
+  ```ruby
+  config.vm.synced_folder ".", "/vagrant", type: "rsync",
+    rsync__exclude: ".git/"
+  ```
+</Note>
+
+<Note>
+  **SMB** — A bi-directional, high-performance option for Windows and macOS hosts. The guest can be Windows, Linux, or macOS. Requires PowerShell 3+ on a Windows host, or SMB file sharing enabled in System Preferences on macOS.
+
+  ```ruby
+  config.vm.synced_folder ".", "/vagrant", type: "smb"
+  ```
+</Note>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="NFS server not running on the host">
+    Check whether `nfsd` is running with `ps aux | grep nfsd`. If it is not, restart it manually:
+
+    ```bash
+    # macOS
+    sudo nfsd restart
+
+    # Linux
+    sudo systemctl start nfs-kernel-server
+    ```
+  </Accordion>
+  <Accordion title="Exports file errors">
+    Verify the exports file is valid:
+
+    ```bash
+    # macOS
+    sudo nfsd checkexports
+
+    # Linux
+    sudo exportfs -ar
+    sudo systemctl status nfs-kernel-server
+    ```
+
+    Check that the synced folder path appears in `/etc/exports`. If it is missing, ensure `nfs_export` is `true` (the default) or add the entry manually.
+  </Accordion>
+  <Accordion title="Guest cannot mount the NFS share">
+    Confirm the guest has an NFS client installed, then test connectivity from inside the VM:
+
+    ```bash
+    vagrant ssh
+    rpcinfo -u <host-ip> nfs
+    showmount -e <host-ip>
+    ```
+
+    Also check that no firewall on the host is blocking NFS ports (2049 TCP/UDP by default).
+  </Accordion>
+  <Accordion title="Encrypted disk: NFS export refused">
+    NFS cannot export encrypted filesystems. The error message is often `<path> does not support NFS`. The only workaround is to share a directory that is not on an encrypted volume.
+  </Accordion>
+  <Accordion title="macOS: nfsd needs Full Disk Access">
+    On macOS, open **System Settings → Privacy & Security → Full Disk Access** and grant access to `/sbin/nfsd` if you see permission errors.
+  </Accordion>
+</AccordionGroup>

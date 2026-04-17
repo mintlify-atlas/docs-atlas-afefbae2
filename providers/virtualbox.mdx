@@ -1,0 +1,175 @@
+---
+title: "Configure and use VirtualBox as a Vagrant provider"
+description: "Configure and run Vagrant machines with VirtualBox. Covers installation, GUI mode, memory and CPU settings, linked clones, and VBoxManage customizations."
+---
+
+Vagrant includes built-in support for [VirtualBox](https://www.virtualbox.org), the free, cross-platform desktop hypervisor from Oracle. VirtualBox is the default provider for Vagrant: if you run `vagrant up` without specifying a provider, Vagrant picks VirtualBox when it is installed. This page covers how to install VirtualBox, configure it through the Vagrantfile, and tune virtual machine behavior with VBoxManage.
+
+## Requirements
+
+The VirtualBox provider supports VirtualBox versions 4.0.x through 7.2.x. Beta and pre-release builds are not supported. Install VirtualBox before running `vagrant up --provider virtualbox` — Vagrant will display an error if it cannot find VirtualBox.
+
+Download VirtualBox from the [official downloads page](https://www.virtualbox.org/wiki/Downloads) and follow the standard installer for your operating system.
+
+<Note>
+  VirtualBox must be installed separately. Vagrant bundles the provider plugin, but not VirtualBox itself.
+</Note>
+
+## Basic usage
+
+Use `--provider virtualbox` to start a machine explicitly with VirtualBox:
+
+```bash
+vagrant up --provider virtualbox
+```
+
+Because VirtualBox is the default provider, you can also omit the flag entirely when VirtualBox is the only provider installed:
+
+```bash
+vagrant up
+```
+
+The VirtualBox provider does not support parallel execution. Passing `--parallel` to `vagrant up` has no effect.
+
+## Configuration
+
+Provider-specific settings go inside a `config.vm.provider "virtualbox"` block. All settings in this block are ignored on machines that do not use the VirtualBox provider, so the Vagrantfile stays portable.
+
+### Memory and CPUs
+
+Set the amount of RAM (in MB) and the number of virtual CPUs:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus   = 2
+  end
+end
+```
+
+### GUI mode
+
+By default, VirtualBox runs machines headlessly — no window appears on your host. Enable the GUI when you need to interact with the desktop or diagnose boot issues:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.gui = true
+end
+```
+
+### VM name
+
+Vagrant generates a name for each machine automatically (folder name plus a timestamp). Set a custom name to make the machine easier to identify in the VirtualBox Manager:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.name = "my-dev-vm"
+end
+```
+
+### Linked clones
+
+By default Vagrant imports the full base box image each time it creates a new machine. Linked clones create a differencing disk on top of a shared master image instead, dramatically reducing disk usage and import time for large boxes:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.linked_clone = true
+end
+```
+
+<Note>
+  The shared master VM is not removed automatically when you run `vagrant destroy`. Delete it manually from the VirtualBox Manager when no linked clones reference it.
+</Note>
+
+### Default NIC type
+
+Override the default network interface card hardware model for all interfaces on this machine:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.default_nic_type = "82543GC"
+end
+```
+
+### Guest Additions check
+
+Vagrant checks for VirtualBox Guest Additions at startup and warns if they are missing or outdated. Disable the check if you manage Guest Additions separately:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.check_guest_additions = false
+end
+```
+
+## VBoxManage customizations
+
+[VBoxManage](https://www.virtualbox.org/manual/ch08.html) is the VirtualBox command-line utility. Vagrant lets you call any `VBoxManage modifyvm` command just before booting a machine using the `customize` method:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.customize ["modifyvm", :id, "--cpuexecutioncap", "50"]
+end
+```
+
+The special `:id` token is replaced at runtime with the VirtualBox machine ID. You can chain multiple `customize` calls; they execute in the order they appear:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.memory = 4096
+  vb.cpus   = 4
+  vb.customize ["modifyvm", :id, "--cpuexecutioncap", "75"]
+  vb.customize ["modifyvm", :id, "--clipboard",       "bidirectional"]
+end
+```
+
+Valid events for `customize` are `pre-import`, `pre-boot` (default), `post-boot`, and `post-comm`. Pass the event name as a separate first string argument before the command array:
+
+```ruby
+config.vm.provider "virtualbox" do |vb|
+  vb.customize "pre-import", ["clonemedium", "--format", "VDI"]
+  vb.customize "post-boot",  ["modifyvm", :id, "--clipboard", "bidirectional"]
+end
+```
+
+<Warning>
+  The `pre-import` event does not support `:id` because the VM does not exist yet at that point.
+</Warning>
+
+## Networking
+
+VirtualBox private networks are host-only networks by default. Use the `virtualbox__intnet` option to make a private network an internal (isolated) network instead:
+
+```ruby
+config.vm.network "private_network", ip: "192.168.50.4",
+  virtualbox__intnet: true
+```
+
+Assign to a named internal network:
+
+```ruby
+config.vm.network "private_network", ip: "192.168.50.4",
+  virtualbox__intnet: "mynetwork"
+```
+
+## Complete example
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.network "private_network", ip: "192.168.56.10"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.name         = "bionic-dev"
+    vb.memory       = 2048
+    vb.cpus         = 2
+    vb.linked_clone = true
+    vb.gui          = false
+
+    vb.customize ["modifyvm", :id, "--cpuexecutioncap", "80"]
+  end
+end
+```

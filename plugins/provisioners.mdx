@@ -1,0 +1,245 @@
+---
+title: "Writing a custom Vagrant provisioner plugin in Ruby"
+description: "Implement a Vagrant provisioner plugin by subclassing the provisioner base class and writing configure, provision, and cleanup lifecycle methods."
+---
+
+Vagrant provisioners automate software installation and configuration inside a running machine. The built-in shell, Ansible, and Chef provisioners all use the same interface you will implement here. A custom provisioner plugin lets you integrate any configuration management tool, custom deployment script runner, or software-installation workflow into Vagrant's standard `vagrant up` and `vagrant provision` commands. Read [provisioning overview](/provisioning/overview) if you are not yet familiar with how provisioners work from a user perspective.
+
+<Warning>
+  Provisioner plugin development is an advanced topic. Read [plugin development basics](/plugins/development) before continuing.
+</Warning>
+
+## Registering the provisioner
+
+Inside your plugin definition class, register the provisioner with the `provisioner` method. The name you choose becomes the identifier used in `config.vm.provision`:
+
+```ruby
+class MyPlugin < Vagrant.plugin("2")
+  name "My Custom Provisioner"
+
+  provisioner "my_provisioner" do
+    require_relative "provisioner"
+    Provisioner
+  end
+
+  # Optional: a config class for this provisioner
+  config "my_provisioner" do
+    require_relative "config"
+    Config
+  end
+end
+```
+
+Users enable your provisioner in their `Vagrantfile`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+
+  config.vm.provision :my_provisioner do |p|
+    p.option_one = "value"
+    p.option_two = true
+  end
+end
+```
+
+## The provisioner base class
+
+Your provisioner subclasses `Vagrant.plugin("2", :provisioner)`. Vagrant exposes three lifecycle methods you can override. None of them return a value.
+
+```ruby
+class Provisioner < Vagrant.plugin("2", :provisioner)
+  # configure is called early in the boot sequence — before shared folders
+  # and networks are set up. Use it to declare any folders, ports, or other
+  # machine-level config your provisioner requires.
+  #
+  # @param [Vagrant::Config::V2::Root] root_config The root config object.
+  def configure(root_config)
+  end
+
+  # provision is called after the machine has booted and the communicator
+  # (SSH or WinRM) is ready. This is where you do the actual provisioning work.
+  def provision
+  end
+
+  # cleanup is called when the machine is destroyed. Use it to remove
+  # any state or resources your provisioner created on the host.
+  def cleanup
+  end
+end
+```
+
+The base class `initialize` stores two instance variables you can use anywhere in your provisioner:
+
+| Variable | Type | Description |
+|---|---|---|
+| `@machine` | `Vagrant::Machine` | The machine being provisioned |
+| `@config` | Config class instance | The provisioner's finalized configuration |
+
+## A complete provisioner skeleton
+
+The following example shows a provisioner that uploads a script to the guest and runs it — similar in structure to Vagrant's built-in shell provisioner:
+
+```ruby
+class Provisioner < Vagrant.plugin("2", :provisioner)
+  def configure(root_config)
+    # Declare any shared folders or networks needed.
+    # Example: share a scripts directory with the guest.
+    if @config.scripts_path
+      root_config.vm.synced_folder(
+        @config.scripts_path,
+        "/vagrant-my-provisioner",
+        id: "my-provisioner-scripts",
+      )
+    end
+  end
+
+  def provision
+    @machine.ui.info("Running my-provisioner...")
+
+    upload_and_run_script
+  rescue => e
+    raise Vagrant::Errors::VagrantError.new,
+          "my-provisioner failed: #{e.message}"
+  end
+
+  def cleanup
+    @machine.ui.info("Cleaning up my-provisioner state...")
+    # Remove any host-side state created during provisioning
+  end
+
+  private
+
+  def upload_and_run_script
+    # Build the script content from config
+    script = build_script
+
+    # Upload to a temp path on the guest
+    remote_path = "/tmp/my-provisioner-#{Time.now.to_i}.sh"
+
+    @machine.communicate.tap do |comm|
+      comm.upload(local_script_path(script), remote_path)
+      comm.execute("chmod +x #{remote_path}")
+      comm.execute(remote_path) do |type, data|
+        handle_comm_output(type, data)
+      end
+    end
+  end
+
+  def handle_comm_output(type, data)
+    # Stream stdout and stderr through Vagrant's UI
+    if type == :stderr
+      @machine.ui.error(data.chomp)
+    else
+      @machine.ui.info(data.chomp)
+    end
+  end
+
+  def build_script
+    "#!/usr/bin/env bash\nset -e\n#{@config.inline}"
+  end
+
+  def local_script_path(content)
+    tmp = Tempfile.new(["my-provisioner", ".sh"])
+    tmp.write(content)
+    tmp.flush
+    tmp.path
+  end
+end
+```
+
+## Config class for your provisioner
+
+Pair your provisioner with a config class to let users set options in the `Vagrantfile`. Use `UNSET_VALUE` as the default for every attribute so Vagrant can merge multiple config blocks correctly:
+
+```ruby
+class Config < Vagrant.plugin("2", :config)
+  # Path to a scripts directory on the host (optional)
+  attr_accessor :scripts_path
+
+  # Inline script to run (alternative to scripts_path)
+  attr_accessor :inline
+
+  # Whether to run the provisioner on every `vagrant up` (default: false)
+  attr_accessor :run_always
+
+  def initialize
+    @scripts_path = UNSET_VALUE
+    @inline       = UNSET_VALUE
+    @run_always   = UNSET_VALUE
+  end
+
+  def finalize!
+    @scripts_path = nil   if @scripts_path == UNSET_VALUE
+    @inline       = nil   if @inline       == UNSET_VALUE
+    @run_always   = false if @run_always   == UNSET_VALUE
+  end
+
+  def validate(machine)
+    errors = _detected_errors
+
+    if @scripts_path.nil? && @inline.nil?
+      errors << "my_provisioner: either scripts_path or inline must be set"
+    end
+
+    if @scripts_path && !File.directory?(@scripts_path)
+      errors << "my_provisioner: scripts_path '#{@scripts_path}' does not exist"
+    end
+
+    { "my_provisioner" => errors }
+  end
+end
+```
+
+## Using the communicator
+
+The communicator (`@machine.communicate`) is the connection to the guest (SSH or WinRM). It is guaranteed to be ready when `provision` is called. Key methods:
+
+| Method | Description |
+|---|---|
+| `execute(cmd)` | Run a command; raises on non-zero exit |
+| `execute(cmd) { \|type, data\| }` | Run a command and stream output line by line |
+| `sudo(cmd)` | Run a command with `sudo` |
+| `upload(src, dst)` | Upload a local file to the guest |
+| `download(src, dst)` | Download a file from the guest to the host |
+| `test(cmd)` | Run a command; returns `true` if exit code is 0 |
+
+```ruby
+# Execute and capture output
+@machine.communicate.execute("cat /etc/os-release") do |type, line|
+  @machine.ui.info(line) if type == :stdout
+end
+
+# Upload a config file
+@machine.communicate.upload("/local/my.conf", "/etc/my-app/my.conf")
+
+# Test for a condition
+if @machine.communicate.test("which docker")
+  @machine.ui.info("Docker is already installed")
+end
+```
+
+<Tip>
+  If your provisioner needs to install software that may not yet exist on the guest, call `sudo` rather than `execute` so the command runs with elevated privileges.
+</Tip>
+
+## Lifecycle timing
+
+Understanding when each method is called helps you design your provisioner correctly:
+
+<Steps>
+  <Step title="configure (early boot)">
+    Called before synced folders, networking, and the communicator are set up. Declare any shared folders or port forwards your provisioner requires here by modifying `root_config`.
+  </Step>
+  <Step title="provision (post-boot)">
+    Called after the machine is fully booted and the communicator is ready. All synced folders and networks declared in `configure` are already active. Do all installation and configuration work here.
+  </Step>
+  <Step title="cleanup (on destroy)">
+    Called when `vagrant destroy` runs. Clean up any host-side state — temp files, local caches — that your provisioner created. Guest-side state is irrelevant since the machine is being deleted.
+  </Step>
+</Steps>
+
+## Further reading
+
+- [Provisioning overview](/provisioning/overview) — how provisioners work from a user's perspective
+- [Plugin development basics](/plugins/development) — plugin anatomy, config merging, error handling, and action hooks

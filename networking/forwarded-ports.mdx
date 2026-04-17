@@ -1,0 +1,135 @@
+---
+title: 'Port forwarding with Vagrant: guest to host mapping'
+description: 'Configure forwarded ports in Vagrant to expose guest services on the host, with options for protocol, IP binding, and automatic collision correction.'
+---
+
+Vagrant port forwarding lets you reach a service running inside the guest VM directly from your host machine. When you send traffic to a port on your host, Vagrant transparently forwards it to the corresponding port on the guest over either TCP or UDP. This is the quickest way to test a web server, API, or database running in a VM without any additional network configuration.
+
+## Basic syntax
+
+Declare a forwarded port with `config.vm.network "forwarded_port"`, supplying the `guest` and `host` port numbers:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+end
+```
+
+After `vagrant up`, opening `http://localhost:8080` on your host reaches whatever is listening on port 80 inside the VM.
+
+## Common scenarios
+
+<Tabs>
+  <Tab title="Web server">
+    Forward port 80 (HTTP) and 443 (HTTPS) from the guest to local ports on the host:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.network "forwarded_port", guest: 80,  host: 8080
+      config.vm.network "forwarded_port", guest: 443, host: 8443
+    end
+    ```
+
+    Access the site at `http://localhost:8080` and `https://localhost:8443`.
+  </Tab>
+  <Tab title="Database">
+    Forward a PostgreSQL or MySQL port so your local client tools can connect:
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      # PostgreSQL
+      config.vm.network "forwarded_port", guest: 5432, host: 5432
+
+      # MySQL
+      config.vm.network "forwarded_port", guest: 3306, host: 3306
+    end
+    ```
+
+    Connect from the host using `localhost` and the host port.
+  </Tab>
+</Tabs>
+
+## Options reference
+
+Only `guest` and `host` are required. All other options are optional.
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `guest` | integer | — | Port on the guest to expose. |
+| `host` | integer | — | Port on the host. Must be above 1024 unless Vagrant runs as root. |
+| `protocol` | string | `"tcp"` | Transport protocol: `"tcp"` or `"udp"`. |
+| `host_ip` | string | all interfaces | IP on the host to bind the forwarded port to. |
+| `guest_ip` | string | all interfaces | IP on the guest to forward traffic from. |
+| `auto_correct` | boolean | `false` | Automatically pick a different host port if there is a collision. |
+| `id` | string | `"protocol"` + `guest` | Rule name visible in the provider UI (e.g., `"tcp80"`). |
+
+## Protocol: TCP and UDP
+
+Forwarded ports use TCP by default. Specify `protocol: "udp"` for UDP traffic. To support both protocols on the same guest port, declare the rule twice:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.network "forwarded_port", guest: 2003, host: 12003, protocol: "tcp"
+  config.vm.network "forwarded_port", guest: 2003, host: 12003, protocol: "udp"
+end
+```
+
+## Restricting access with host_ip
+
+By default, forwarded ports bind to all host interfaces, making the service accessible from other devices on your network. Bind to `127.0.0.1` to restrict the port to your local machine only:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.network "forwarded_port", guest: 3306, host: 3306, host_ip: "127.0.0.1"
+end
+```
+
+<Warning>
+  Vagrant boxes ship with known credentials. Binding forwarded ports to all interfaces exposes those services to anyone on your network. Use `host_ip: "127.0.0.1"` for sensitive ports such as databases.
+</Warning>
+
+## Collision detection and auto-correction
+
+Vagrant always checks whether the host port is already in use before starting the VM. If a conflict exists, Vagrant will refuse to start and report the collision.
+
+To let Vagrant pick an alternative port automatically, enable `auto_correct`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.network "forwarded_port", guest: 80, host: 8080, auto_correct: true
+end
+```
+
+Vagrant logs any reassigned ports to the console during `vagrant up` or `vagrant reload` so you can see which port was actually used.
+
+You can constrain the range Vagrant searches when correcting collisions:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.usable_port_range = 8000..8999
+end
+```
+
+## Viewing active port mappings
+
+Run `vagrant port` to display all current forwarded port mappings for a running machine:
+
+```bash
+vagrant port
+```
+
+Example output:
+
+```
+The forwarded ports for the machine are listed below. Please note that
+these values may differ from values configured in the Vagrantfile if the
+provider supports automatic port collision detection and correction.
+
+    22 (guest) => 2222 (host)
+    80 (guest) => 8080 (host)
+  3306 (guest) => 3306 (host)
+```
+
+<Note>
+  The SSH port (22 → 2222) appears in this list because Vagrant always sets up its own forwarded port for `vagrant ssh`. Do not remove it.
+</Note>

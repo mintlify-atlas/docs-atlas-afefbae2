@@ -1,97 +1,77 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Vagrant: Reproducible Development Environments"
+description: "Vagrant automates the creation and management of portable virtualized development environments, eliminating the 'works on my machine' problem for every team."
 ---
 
-## Setting up
+Vagrant is a command-line tool for building and managing virtualized development environments. With a single configuration file called the Vagrantfile, you define your machine, and Vagrant handles provisioning, networking, and synced folders — so every team member runs identical environments on VirtualBox, VMware, Docker, or cloud providers.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get a virtual machine running in minutes with your first Vagrantfile
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Install Vagrant on macOS, Windows, or Linux
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Vagrantfile Reference" icon="file-code" href="/vagrantfile/overview">
+    Learn to configure machines, networks, and provisioners
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="CLI Reference" icon="terminal" href="/cli/overview">
+    Explore every Vagrant command and its flags
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What is Vagrant?
 
-Everything you need to create world-class documentation.
+Vagrant wraps industry-standard virtualization technology into a single, consistent workflow. You write one Vagrantfile that describes your development environment, commit it to version control, and every developer on your team gets the same machine with `vagrant up`.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={3}>
+  <Card title="Providers" icon="server" href="/providers/overview">
+    VirtualBox, VMware, Docker, Hyper-V, and custom providers
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Provisioning" icon="gear" href="/provisioning/overview">
+    Shell, Ansible, Chef, Puppet, Docker, and Salt
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Networking" icon="network-wired" href="/networking/overview">
+    Port forwarding, private and public networks
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Synced Folders" icon="folder-open" href="/synced-folders/overview">
+    NFS, SMB, rsync, and VirtualBox shared folders
   </Card>
-</Columns>
+  <Card title="Boxes" icon="box" href="/boxes/overview">
+    Base images from Vagrant Cloud or custom-built
+  </Card>
+  <Card title="Plugins" icon="plug" href="/plugins/overview">
+    Extend Vagrant with custom commands and providers
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## Get started in four steps
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Steps>
+  <Step title="Install Vagrant and VirtualBox">
+    Download and install [VirtualBox](https://www.virtualbox.org/) and then Vagrant for your operating system. See the [installation guide](/installation) for full instructions.
+  </Step>
+  <Step title="Initialize a project">
+    Create a new directory, then run `vagrant init` to scaffold a Vagrantfile with a base box:
+    ```bash
+    mkdir my-project && cd my-project
+    vagrant init hashicorp/bionic64
+    ```
+  </Step>
+  <Step title="Start the machine">
+    Boot your virtual machine. Vagrant downloads the box and provisions the environment automatically:
+    ```bash
+    vagrant up
+    ```
+  </Step>
+  <Step title="SSH into the machine">
+    Connect to the running machine over SSH:
+    ```bash
+    vagrant ssh
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+  Run `vagrant destroy` when you're done to free disk space. Your Vagrantfile persists, so you can always recreate the environment with `vagrant up`.
+</Tip>

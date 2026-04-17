@@ -1,0 +1,218 @@
+---
+title: "Using Docker as a Vagrant provider for dev environments"
+description: "Back Vagrant environments with containers. Covers image and Dockerfile workflows, the host VM on macOS and Windows, and Docker provider config options."
+---
+
+Vagrant includes built-in support for Docker as a provider, letting you back development environments with containers rather than full virtual machines. This is distinct from the Docker _provisioner_, which installs Docker inside a virtual machine — when you use the Docker _provider_, the container itself is the environment that Vagrant manages. This page covers how to use the Docker provider, how the automatic host VM works on non-Linux platforms, and all available configuration options.
+
+<Warning>
+  Basic Docker knowledge is assumed. If you are new to containers, consider starting with the [VirtualBox provider](/providers/virtualbox) instead.
+</Warning>
+
+## How the Docker provider works
+
+When Docker is the provider, `vagrant up` creates and starts a Docker container. Vagrant maps synced folders to Docker volumes, forwarded ports to container port bindings, and translates the rest of the standard Vagrantfile network configuration into `docker network` commands.
+
+The Docker provider does not require a `config.vm.box` because the container's base image comes from a Docker registry or a local Dockerfile.
+
+## Defining the container image
+
+You must specify exactly one of `image`, `build_dir`, or `git_repo` in the provider block.
+
+### From a registry image
+
+Pull and run an image from any Docker registry:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provider "docker" do |d|
+    d.image = "ubuntu:22.04"
+  end
+end
+```
+
+### From a local Dockerfile
+
+Build and run an image from a `Dockerfile` in a local directory:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provider "docker" do |d|
+    d.build_dir = "."
+  end
+end
+```
+
+Vagrant rebuilds the image whenever you run `vagrant reload`. If your `Dockerfile` has a non-standard name, set it explicitly:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.build_dir  = "."
+  d.dockerfile = "Dockerfile.dev"
+end
+```
+
+### From a Git repository
+
+Build an image from a remote Git repository that contains a `Dockerfile`:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.git_repo = "https://github.com/example/app.git#main"
+end
+```
+
+## SSH access
+
+Containers do not expose SSH by default. Set `has_ssh` to `true` to allow `vagrant ssh`, provisioners, and other features that require a shell connection:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.image   = "ubuntu:22.04"
+  d.has_ssh = true
+end
+```
+
+## Host VM on macOS and Windows
+
+Docker containers require a Linux kernel. On macOS and Windows, Vagrant automatically provisions a lightweight "host VM" to run Docker. You pay the overhead of only one VM regardless of how many containers your Vagrantfile defines.
+
+The default host VM is based on boot2docker and starts quickly. To use a different host VM — for example, Ubuntu — point to a custom Vagrantfile:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.vagrant_vagrantfile = "../host-vm/Vagrantfile"
+  d.vagrant_machine     = "default"
+end
+```
+
+The host VM starts on the first `vagrant up` that uses the Docker provider. Use `vagrant global-status` to manage it independently.
+
+<Note>
+  Synced folders to the container pass through the host VM. boot2docker uses rsync for this, so ensure `rsync` is installed on your host machine.
+</Note>
+
+To force a host VM even on Linux — for example, to enforce a consistent environment across your team:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.force_host_vm = true
+end
+```
+
+## Synced folders and volumes
+
+Vagrant automatically translates `config.vm.synced_folder` entries into Docker volume mounts. On macOS you can improve performance by setting a consistency hint:
+
+```ruby
+config.vm.synced_folder ".", "/vagrant",    docker_consistency: "cached"
+config.vm.synced_folder "./data", "/data",  docker_consistency: "delegated"
+```
+
+The Docker provider does not support the `owner` or `group` options on synced folders.
+
+## Environment variables
+
+Pass environment variables into the container with the `env` hash:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.image = "myapp:latest"
+  d.env   = {
+    "RACK_ENV"    => "development",
+    "DATABASE_URL" => "postgres://localhost/myapp"
+  }
+end
+```
+
+## Extra `docker run` arguments
+
+Pass arbitrary flags to `docker run` that are not exposed as dedicated options:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.image       = "myapp:latest"
+  d.create_args = ["--memory=512m", "--cpus=1"]
+end
+```
+
+## Private registry authentication
+
+Set credentials to authenticate before pulling private images. Vagrant runs `docker login` automatically:
+
+```ruby
+config.vm.provider "docker" do |d|
+  d.image       = "registry.example.com/myapp:latest"
+  d.username    = "myuser"
+  d.password    = "s3cr3t"
+  d.auth_server = "registry.example.com"
+end
+```
+
+## Configuration reference
+
+<AccordionGroup>
+  <Accordion title="Image source (one required)">
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `image` | string | Image name or ID to run (e.g., `ubuntu:22.04`). |
+    | `build_dir` | string | Path to a directory containing a Dockerfile. |
+    | `git_repo` | string | URL of a Git repository with a Dockerfile. |
+    | `dockerfile` | string | Dockerfile filename when using `build_dir`. Defaults to `"Dockerfile"`. |
+    | `build_args` | array | Extra arguments passed to `docker build`. |
+  </Accordion>
+  <Accordion title="Container behaviour">
+    | Option | Type | Default | Description |
+    |--------|------|---------|-------------|
+    | `cmd` | array | `[]` | Override the container entrypoint command. |
+    | `env` | hash | `{}` | Environment variables to inject. |
+    | `expose` | array | `[]` | Ports to expose between containers (not to the host). |
+    | `name` | string | generated | Container name. Must be unique on the host VM. |
+    | `pull` | boolean | `false` | Pull the latest image on every `up` and `reload`. |
+    | `remains_running` | boolean | `true` | Whether Vagrant expects the container to keep running. |
+    | `stop_timeout` | integer | `1` | Seconds to wait before sending SIGTERM on stop. |
+    | `privileged` | boolean | `false` | Run the container in privileged mode. |
+    | `create_args` | array | `[]` | Extra arguments appended to `docker run`. |
+    | `volumes` | array | `[]` | Additional host paths to mount as volumes. |
+  </Accordion>
+  <Accordion title="SSH and host VM">
+    | Option | Type | Default | Description |
+    |--------|------|---------|-------------|
+    | `has_ssh` | boolean | `false` | Enable SSH access inside the container. |
+    | `force_host_vm` | boolean | auto | Force a host VM even on Linux. Defaults to `true` on non-Linux, non-macOS, non-Windows hosts. |
+    | `vagrant_vagrantfile` | string | built-in | Path to the Vagrantfile for the host VM. |
+    | `vagrant_machine` | string | `"default"` | Machine name in `vagrant_vagrantfile` to use as the host VM. |
+    | `host_vm_build_dir_options` | hash | `nil` | Synced folder options for the `build_dir` when a host VM is in use. |
+  </Accordion>
+  <Accordion title="docker-compose">
+    | Option | Type | Default | Description |
+    |--------|------|---------|-------------|
+    | `compose` | boolean | `false` | Use `docker-compose` to manage container lifecycle. |
+    | `compose_configuration` | hash | `{}` | Additional keys merged into the generated `docker-compose.yml` (e.g., networks, top-level volumes). |
+  </Accordion>
+  <Accordion title="Authentication">
+    | Option | Type | Description |
+    |--------|------|-------------|
+    | `username` | string | Docker registry username. |
+    | `password` | string | Docker registry password. |
+    | `email` | string | Docker registry email address. |
+    | `auth_server` | string | Registry URL. Defaults to Docker Hub. |
+  </Accordion>
+</AccordionGroup>
+
+## Complete example
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.network "forwarded_port", guest: 3000, host: 3000
+
+  config.vm.synced_folder ".", "/app", docker_consistency: "cached"
+
+  config.vm.provider "docker" do |d|
+    d.build_dir = "."
+    d.has_ssh   = true
+    d.env       = { "RACK_ENV" => "development" }
+    d.create_args = ["--memory=1g"]
+  end
+end
+```

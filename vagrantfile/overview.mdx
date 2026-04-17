@@ -1,0 +1,190 @@
+---
+title: "Vagrantfile: Configure Your Development Environment"
+description: "Learn how Vagrant's Ruby-based configuration file works, including config object structure, load order, and practical examples for defining machines."
+---
+
+The Vagrantfile is the heart of every Vagrant project. It describes the type of machine required, how to configure it, and how to provision it — all in a single file that you commit to version control so every developer on your team starts from the same environment. Vagrant uses a Ruby-based DSL, but you don't need to know Ruby; most configuration is straightforward variable assignment.
+
+## What is a Vagrantfile?
+
+A Vagrantfile defines your development environment declaratively. When you run `vagrant up`, Vagrant reads the Vagrantfile, downloads the specified box if needed, and brings up a machine configured exactly as described. Because the file is portable across every platform Vagrant supports, committing it to source control is enough to share a reproducible environment with your whole team.
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box     = "hashicorp/bionic64"
+  config.vm.hostname = "dev-box"
+
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+
+  config.vm.synced_folder "./app", "/var/www/app"
+
+  config.vm.provision "shell", inline: <<-SHELL
+    apt-get update
+    apt-get install -y nginx
+  SHELL
+end
+```
+
+<Note>
+  The literal filename must be `Vagrantfile`. Casing does not matter unless your file system runs in strict case-sensitive mode.
+</Note>
+
+## Config object structure
+
+All Vagrantfile settings live inside a `Vagrant.configure("2")` block. The `"2"` argument refers to the configuration version — always use `"2"` for current Vagrant features.
+
+Inside the block, three namespaces cover the most common configuration needs:
+
+<CardGroup cols={3}>
+  <Card title="config.vm" icon="server" href="/vagrantfile/machine-settings">
+    Machine settings: box, hostname, networking, synced folders, providers, and provisioners.
+  </Card>
+  <Card title="config.ssh" icon="lock" href="/vagrantfile/ssh-settings">
+    SSH settings: username, port, key paths, agent forwarding, and connection options.
+  </Card>
+  <Card title="config.vagrant" icon="gear">
+    Vagrant behavior: host detection, required plugins, and sensitive value masking.
+  </Card>
+</CardGroup>
+
+You can use multiple `Vagrant.configure` blocks in a single Vagrantfile. Vagrant merges all blocks in the order they appear.
+
+## Lookup path
+
+When you run any `vagrant` command, Vagrant climbs up the directory tree from your current directory looking for the first Vagrantfile it finds. For example, running `vagrant` from `/home/user/projects/foo` searches these paths in order:
+
+```
+/home/user/projects/foo/Vagrantfile
+/home/user/projects/Vagrantfile
+/home/user/Vagrantfile
+/home/Vagrantfile
+/Vagrantfile
+```
+
+<Tip>
+  Set the `VAGRANT_CWD` environment variable to change the starting directory for the Vagrantfile lookup.
+</Tip>
+
+## Load order and merging
+
+Vagrant loads and merges multiple Vagrantfiles in a specific order, allowing higher-specificity files to override lower-specificity defaults.
+
+<Steps>
+  <Step title="Box Vagrantfile">
+    The Vagrantfile packaged with the box itself. It provides box-level defaults.
+  </Step>
+  <Step title="User Vagrantfile">
+    The Vagrantfile in your Vagrant home directory (`~/.vagrant.d`). Use this for user-level defaults that apply across all your projects.
+  </Step>
+  <Step title="Project Vagrantfile">
+    The Vagrantfile in your project directory. This is the file you edit most of the time.
+  </Step>
+  <Step title="Multi-machine overrides">
+    Per-machine configuration blocks inside a multi-machine Vagrantfile.
+  </Step>
+  <Step title="Provider-specific overrides">
+    Configuration inside `config.vm.provider` blocks, applied only when that provider is active.
+  </Step>
+</Steps>
+
+At each step, newer settings override earlier ones. For additive settings like networks, Vagrant appends rather than replaces.
+
+## Common Vagrantfile examples
+
+<Tabs>
+  <Tab title="Basic machine">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box     = "hashicorp/bionic64"
+      config.vm.hostname = "my-dev-box"
+    end
+    ```
+  </Tab>
+  <Tab title="With networking">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.box = "hashicorp/bionic64"
+
+      # Forward port 3000 on the guest to 3000 on the host
+      config.vm.network "forwarded_port", guest: 3000, host: 3000
+
+      # Assign a private network IP
+      config.vm.network "private_network", ip: "192.168.56.10"
+    end
+    ```
+  </Tab>
+  <Tab title="Multi-machine">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.define "web" do |web|
+        web.vm.box      = "hashicorp/bionic64"
+        web.vm.hostname = "web-server"
+        web.vm.network "forwarded_port", guest: 80, host: 8080
+      end
+
+      config.vm.define "db" do |db|
+        db.vm.box      = "hashicorp/bionic64"
+        db.vm.hostname = "database"
+      end
+    end
+    ```
+  </Tab>
+  <Tab title="Loop over machines">
+    ```ruby
+    Vagrant.configure("2") do |config|
+      (1..3).each do |i|
+        config.vm.define "node-#{i}" do |node|
+          node.vm.box = "hashicorp/bionic64"
+          node.vm.provision "shell",
+            inline: "echo hello from node #{i}"
+        end
+      end
+    end
+    ```
+
+    <Warning>
+      Use `.each` with a block variable (`|i|`), not a `for` loop. Ruby's `for` construct mutates the loop variable, so every machine would see the same final value of `i`.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Tips and tricks
+
+**Override host locale in the SSH session.** Some guest software fails when host locale variables are passed through. Set the locale at the top of your Vagrantfile, outside the configure block, so the override is scoped only to Vagrant:
+
+```ruby
+ENV["LC_ALL"] = "en_US.UTF-8"
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+end
+```
+
+**Require plugins for a project.** Use `config.vagrant.plugins` to ensure collaborators have the right Vagrant plugins before `vagrant up` succeeds:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vagrant.plugins = ["vagrant-scp", "vagrant-reload"]
+  config.vm.box = "hashicorp/bionic64"
+end
+```
+
+**Mask sensitive values.** Prevent passwords or tokens from appearing in Vagrant's output:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vagrant.sensitive = [ENV["DB_PASSWORD"]]
+  config.vm.box = "hashicorp/bionic64"
+end
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Machine settings" icon="server" href="/vagrantfile/machine-settings">
+    Explore every `config.vm.*` option for boxes, networking, synced folders, and more.
+  </Card>
+  <Card title="SSH settings" icon="lock" href="/vagrantfile/ssh-settings">
+    Tune how Vagrant connects to your machine over SSH.
+  </Card>
+</CardGroup>

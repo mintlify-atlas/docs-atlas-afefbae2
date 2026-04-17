@@ -1,0 +1,197 @@
+---
+title: "Save and restore machine state with vagrant snapshot"
+description: "Save, restore, and manage point-in-time machine snapshots using vagrant snapshot push/pop for stack-based workflows or save/restore for named checkpoints."
+---
+
+Vagrant snapshots let you capture the exact state of a running machine and restore it later. This is valuable during development: you can snapshot a known-good state, make risky changes, and roll back in seconds if something breaks. Vagrant provides two complementary workflows—a simple push/pop stack for quick checkpointing and named save/restore commands for more structured state management.
+
+<Note>
+Snapshot support depends on your provider. VirtualBox and VMware support snapshots. If your provider does not support snapshots, Vagrant will return an error when you run any `vagrant snapshot` subcommand.
+</Note>
+
+## Two workflows
+
+<CardGroup cols={2}>
+  <Card title="Stack-based (push/pop)" icon="layer-group">
+    Unnamed snapshots managed as a stack. Best for quick, temporary checkpoints during a single work session.
+  </Card>
+  <Card title="Named (save/restore)" icon="bookmark">
+    Snapshots with explicit names. Best for checkpoints you want to return to multiple times or keep across sessions.
+  </Card>
+</CardGroup>
+
+<Warning>
+Do not mix push/pop and save/restore on the same machine. Using `vagrant snapshot save` while push/pop snapshots exist on the stack can leave the stack in an inconsistent state.
+</Warning>
+
+---
+
+## Stack-based workflow
+
+### vagrant snapshot push
+
+**Synopsis:** `vagrant snapshot push [name|id]`
+
+Takes a snapshot and pushes it onto the snapshot stack. No name is required:
+
+```bash
+vagrant snapshot push
+```
+
+Use this before making changes you may want to undo:
+
+```bash
+# Working state — push a checkpoint
+vagrant snapshot push
+
+# Make changes, install software, edit config...
+sudo apt-get install -y nginx
+
+# Something went wrong — restore the checkpoint
+vagrant snapshot pop
+```
+
+### vagrant snapshot pop
+
+**Synopsis:** `vagrant snapshot pop [name|id]`
+
+Restores the most recently pushed snapshot and removes it from the stack:
+
+```bash
+vagrant snapshot pop
+```
+
+### Flags for pop
+
+| Flag | Description |
+|---|---|
+| `--[no-]provision` | Force provisioners to run (or skip them) after restoring |
+| `--no-delete` | Restore the snapshot but leave it on the stack so you can pop again later |
+| `--no-start` | Restore snapshot state but do not start the machine |
+
+```bash
+# Restore but keep the snapshot on the stack
+vagrant snapshot pop --no-delete
+
+# Restore without starting the machine
+vagrant snapshot pop --no-start
+```
+
+---
+
+## Named workflow
+
+### vagrant snapshot save
+
+**Synopsis:** `vagrant snapshot save [vm-name] NAME`
+
+Saves a new named snapshot:
+
+```bash
+vagrant snapshot save clean-install
+vagrant snapshot save before-migration
+```
+
+In a multi-machine project, prefix with the machine name:
+
+```bash
+vagrant snapshot save web clean-install
+vagrant snapshot save db pre-schema-change
+```
+
+| Flag | Description |
+|---|---|
+| `-f` / `--force` | Replace an existing snapshot with the same name without prompting |
+
+### vagrant snapshot restore
+
+**Synopsis:** `vagrant snapshot restore [vm-name] NAME`
+
+Restores the machine to the named snapshot:
+
+```bash
+vagrant snapshot restore clean-install
+```
+
+### Flags for restore
+
+| Flag | Description |
+|---|---|
+| `--[no-]provision` | Force provisioners to run (or skip them) after restoring |
+| `--no-start` | Restore snapshot state but do not start the machine |
+
+### vagrant snapshot list
+
+**Synopsis:** `vagrant snapshot list [name|id]`
+
+Lists all snapshots taken for the machine:
+
+```bash
+vagrant snapshot list
+# ==> default:
+# clean-install
+# before-migration
+# after-migration
+```
+
+### vagrant snapshot delete
+
+**Synopsis:** `vagrant snapshot delete [vm-name] NAME`
+
+Deletes the named snapshot:
+
+```bash
+vagrant snapshot delete before-migration
+```
+
+<Warning>
+Some providers (including VirtualBox) require "child" snapshots to be deleted before their parent. Vagrant does not track parent-child relationships, so you must delete snapshots in reverse order of creation:
+
+```bash
+# Created: step-1, then step-2, then step-3
+vagrant snapshot delete step-3
+vagrant snapshot delete step-2
+vagrant snapshot delete step-1
+```
+</Warning>
+
+<Tip>
+Snapshot deletion is significantly faster when the machine is halted first. If halting is not possible, deletion can still be done while the machine is running on most providers.
+</Tip>
+
+---
+
+## Development checkpointing example
+
+The following workflow shows a practical pattern for iterative development:
+
+<Steps>
+  <Step title="Bring up the machine and install base software">
+    ```bash
+    vagrant up
+    vagrant ssh --command "sudo apt-get update && sudo apt-get install -y ruby"
+    ```
+  </Step>
+  <Step title="Snapshot the known-good state">
+    ```bash
+    vagrant snapshot save ruby-installed
+    ```
+  </Step>
+  <Step title="Experiment freely">
+    ```bash
+    vagrant ssh
+    # Make changes, install gems, modify config...
+    ```
+  </Step>
+  <Step title="Restore if the experiment fails">
+    ```bash
+    vagrant snapshot restore ruby-installed
+    ```
+  </Step>
+  <Step title="Clean up when done">
+    ```bash
+    vagrant snapshot delete ruby-installed
+    vagrant destroy
+    ```
+  </Step>
+</Steps>

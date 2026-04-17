@@ -1,0 +1,161 @@
+---
+title: "Provisioning Vagrant machines with Docker containers"
+description: "The Vagrant Docker provisioner installs Docker on the guest, pulls registry images, builds from a Dockerfile, and starts containers automatically on each boot."
+---
+
+The Vagrant Docker provisioner (`"docker"`) installs [Docker](https://www.docker.com/) on the guest machine, pulls images, builds images from Dockerfiles, and starts containers configured to run on boot. It is distinct from the [Docker provider](/providers/docker), which uses Docker containers as the machine runtime itself — the provisioner operates on an existing guest machine to manage Docker workloads running inside it.
+
+<Note>
+This page covers the Docker **provisioner**. If you want to use Docker containers as a replacement for VirtualBox VMs, see the [Docker provider](/providers/docker) documentation.
+</Note>
+
+The Docker provisioner works alongside other provisioners. For example, you can use Puppet to install a database, then use the Docker provisioner to run your application container.
+
+## Basic usage
+
+If you call the Docker provisioner with no options, it installs Docker on the guest:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker"
+end
+```
+
+## Pulling images
+
+Pull one or more images from the Docker registry using the `images` option:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker",
+    images: ["ubuntu", "nginx"]
+end
+```
+
+With the block syntax, use `pull_images` to add images. Multiple calls append to the list:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.pull_images "ubuntu"
+    d.pull_images "nginx"
+  end
+end
+```
+
+<Note>
+`pull_images` cannot be used with the single-line provisioner syntax. Use the block form with `do...end`.
+</Note>
+
+## Building images
+
+Build a Docker image from a `Dockerfile` present on the guest machine. Use a synced folder to make host-side files available:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.build_image "/vagrant/app"
+  end
+end
+```
+
+The argument is the build context path passed to `docker build`. Pass a tag and other flags using the `args` option:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.build_image "/vagrant/app", args: "-t myapp:latest"
+  end
+end
+```
+
+## Running containers
+
+Use the `run` method to start a container and configure it to launch on boot:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.run "rabbitmq"
+  end
+end
+```
+
+The first argument is the image name and becomes the container name by default (slashes and colons are replaced with hyphens).
+
+Pass options to customise the container:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.run "ubuntu",
+      cmd:  "bash -l",
+      args: "-v '/vagrant:/var/www'"
+  end
+end
+```
+
+To run multiple containers from the same image, provide distinct names with the `image` option:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.run "db-primary", image: "user/mysql"
+    d.run "db-replica",  image: "user/mysql"
+  end
+end
+```
+
+### `run` options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `image` | string | First argument | Image to run. Defaults to the name argument. |
+| `cmd` | string | Container default | Command to start inside the container. |
+| `args` | string | — | Raw arguments appended to `docker run`. |
+| `auto_assign_name` | boolean | `true` | Set `--name` from the first argument. Slashes and colons become hyphens. |
+| `daemonize` | boolean | `true` | Pass `-d` to run the container in the background. |
+| `restart` | string | `"always"` | Docker restart policy for the container. |
+
+## Post-install provisioner
+
+Use `post_install_provision` to run an additional provisioner immediately after Docker is installed. This is useful for modifying Docker daemon configuration before containers start:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+  config.vm.provision "docker" do |d|
+    d.post_install_provision "shell",
+      inline: "echo export http_proxy='http://proxy.example.com:3128/' >> /etc/default/docker"
+    d.run "ubuntu",
+      cmd:  "bash -l",
+      args: "-v '/vagrant:/var/www'"
+  end
+end
+```
+
+## Combining with other provisioners
+
+Because all Vagrant provisioners can be combined, you can mix the Docker provisioner with others. For example, use a shell provisioner to configure the system first, then use Docker to start application containers:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.box = "hashicorp/bionic64"
+
+  config.vm.provision "shell",
+    inline: "apt-get install -y curl"
+
+  config.vm.provision "docker" do |d|
+    d.pull_images "redis"
+    d.run "redis", args: "-p 6379:6379"
+  end
+end
+```

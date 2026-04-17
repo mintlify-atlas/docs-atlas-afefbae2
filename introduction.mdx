@@ -1,0 +1,58 @@
+---
+title: "Introduction to Vagrant: what it does and why it matters"
+description: "Vagrant is a tool for building reproducible, portable development environments with a single workflow across VirtualBox, VMware, AWS, and more."
+---
+
+Vagrant is a command-line tool for building and managing virtual machine environments. It gives you a consistent, reproducible development environment that runs on your laptop or in the cloud — and works the same way for every member of your team, regardless of whether they use Linux, macOS, or Windows.
+
+## What is Vagrant?
+
+Vagrant provides easy-to-configure, reproducible, and portable work environments built on top of industry-standard virtualization technology. You describe your environment in a single file called a `Vagrantfile`, then Vagrant handles provisioning, networking, and synced folders for you. Machines run on top of providers like VirtualBox, VMware, or AWS. Industry-standard provisioning tools — shell scripts, Chef, Puppet, Ansible — can then automatically install and configure software inside the virtual machine.
+
+## Why use Vagrant?
+
+The core promise of Vagrant is eliminating the "works on my machine" problem. When your team shares a `Vagrantfile`, everyone creates their environment from the same configuration. There is no manual setup, no diverging dependencies, and no debugging environment differences.
+
+<CardGroup cols={2}>
+  <Card title="For developers" icon="code">
+    Isolate project dependencies in a disposable, consistent environment without giving up your local editor, browser, or debugger. Run `vagrant up` and your stack is ready.
+  </Card>
+  <Card title="For operators" icon="server">
+    Test shell scripts, Chef cookbooks, and Puppet modules against a local VM using the same configuration you will deploy to AWS or RackSpace. One workflow for local and remote.
+  </Card>
+  <Card title="For designers" icon="pen-ruler">
+    Get the web app running without relying on a developer to fix your environment. Check out the code, run `vagrant up`, and focus on design.
+  </Card>
+  <Card title="For teams" icon="users">
+    Onboard new teammates in minutes. The same `Vagrantfile` works on Linux, macOS, and Windows, so everyone develops in the same environment.
+  </Card>
+</CardGroup>
+
+## How Vagrant compares to other tools
+
+Vagrant is not a configuration management tool like Chef or Puppet — it orchestrates virtual machines and delegates provisioning to those tools. It is not a full virtualization platform like VirtualBox or VMware either; instead, it sits on top of those providers and gives you a unified workflow for managing them.
+
+| Tool | Purpose | Vagrant's role |
+|---|---|---|
+| VirtualBox / VMware | Run virtual machines | Provider that Vagrant manages |
+| Chef / Puppet / Ansible | Configure software on a machine | Provisioner that Vagrant invokes |
+| Docker | Run containerized workloads | Can be used as a provider or provisioner |
+| Terraform | Provision cloud infrastructure | Complementary — Vagrant focuses on dev environments |
+
+<Note>
+  Vagrant is designed for development environments. For production infrastructure provisioning, consider [Terraform](https://www.terraform.io/).
+</Note>
+
+## Next steps
+
+<CardGroup cols={3}>
+  <Card title="Install Vagrant" icon="download" href="/installation">
+    Get Vagrant installed on macOS, Windows, or Linux.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Bring up your first virtual machine in minutes.
+  </Card>
+  <Card title="Vagrantfile overview" icon="file-code" href="/vagrantfile/overview">
+    Learn how to configure your development environment.
+  </Card>
+</CardGroup>

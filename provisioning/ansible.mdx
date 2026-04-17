@@ -1,0 +1,248 @@
+---
+title: "Provisioning Vagrant guest machines with Ansible"
+description: "Use Vagrant's ansible or ansible_local provisioner to run playbooks against guest machines, with support for inventory, groups, extra_vars, and tags."
+---
+
+Vagrant integrates with [Ansible](https://www.ansible.com/) through two provisioners that cover different setups. The `ansible` provisioner runs `ansible-playbook` from your Vagrant host machine, while `ansible_local` runs it directly on the guest. Both accept the same core options; the difference is only where Ansible is installed and executed.
+
+<Note>
+If you are new to Vagrant, start with the [shell provisioner](/provisioning/shell) before moving to Ansible. Ansible is well worth learning, but it is a full deployment system with its own concepts.
+</Note>
+
+## Choosing a provisioner
+
+<Tabs>
+  <Tab title="ansible (remote)">
+    Use `ansible` when Ansible is already installed on your development machine and you want to run playbooks from the host.
+
+    **Requirements:**
+    - Ansible installed on the Vagrant host
+    - A recent OpenSSH version on the host that supports `ControlPersist`
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "ansible" do |ansible|
+        ansible.playbook = "playbook.yml"
+      end
+    end
+    ```
+
+    Vagrant automatically generates an inventory file at
+    `.vagrant/provisioners/ansible/inventory/vagrant_ansible_inventory` and passes it to `ansible-playbook`.
+  </Tab>
+  <Tab title="ansible_local (guest)">
+    Use `ansible_local` when you cannot or do not want to install Ansible on your host. Vagrant will attempt to install Ansible on the guest automatically.
+
+    **Requirements:**
+    - Ansible on the guest (Vagrant installs it by default)
+    - Playbook files available on the guest (typically via the default synced folder)
+
+    ```ruby
+    Vagrant.configure("2") do |config|
+      config.vm.provision "ansible_local" do |ansible|
+        ansible.playbook = "playbook.yml"
+      end
+    end
+    ```
+
+    By default, the playbook path is resolved relative to `/vagrant` (the synced project folder). The generated inventory is placed at `/tmp/vagrant-ansible/inventory/`.
+  </Tab>
+</Tabs>
+
+## The playbook file
+
+Both provisioners require the `playbook` option. The path is relative to the `Vagrantfile` for `ansible`, and relative to `provisioning_path` (default `/vagrant`) for `ansible_local`.
+
+A minimal playbook that installs NTP:
+
+```yaml
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: ensure ntpd is at the latest version
+      yum: pkg=ntp state=latest
+      notify:
+        - restart ntpd
+  handlers:
+    - name: restart ntpd
+      service: name=ntpd state=restarted
+```
+
+For larger projects, organize playbooks in subdirectories and adjust the path:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "provisioning/playbook.yml"
+  end
+end
+```
+
+## Inventory
+
+Vagrant generates an inventory automatically. You can also supply your own with `inventory_path`:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook       = "playbook.yml"
+    ansible.inventory_path = "inventory/hosts"
+    ansible.limit          = "all"
+  end
+end
+```
+
+<Note>
+When using a custom `inventory_path`, set `ansible.limit = "all"` if you want the provisioner to apply to all machines defined in the inventory, not just the current guest.
+</Note>
+
+## Groups and host variables
+
+Use `groups` to organise machines into Ansible groups within the auto-generated inventory:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.define "web"
+  config.vm.define "db"
+
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "playbook.yml"
+    ansible.groups = {
+      "webservers"        => ["web"],
+      "databases"         => ["db"],
+      "all:children"      => ["webservers", "databases"],
+      "webservers:vars"   => { "http_port" => 80 }
+    }
+  end
+end
+```
+
+Use `host_vars` to set variables for individual machines:
+
+```ruby
+ansible.host_vars = {
+  "web" => { "http_port" => 80, "max_clients" => 200 },
+  "db"  => { "db_port"   => 5432 }
+}
+```
+
+## Extra variables and tags
+
+Pass extra variables to the playbook using a hash or a path to a variables file:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook   = "playbook.yml"
+    ansible.extra_vars = {
+      "deploy_env" => "staging",
+      "app_port"   => 8080
+    }
+  end
+end
+```
+
+Limit execution to specific tags:
+
+```ruby
+ansible.tags      = ["install", "configure"]
+ansible.skip_tags = ["cleanup"]
+```
+
+## Verbose output
+
+Enable verbose output for debugging. The value maps to Ansible's `-v` flags:
+
+```ruby
+ansible.verbose = "vvv"   # equivalent to ansible-playbook -vvv
+```
+
+## Galaxy roles
+
+Install roles from Ansible Galaxy before running the playbook:
+
+```ruby
+Vagrant.configure("2") do |config|
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook          = "playbook.yml"
+    ansible.galaxy_role_file  = "requirements.yml"
+    ansible.galaxy_roles_path = "roles"
+  end
+end
+```
+
+## ansible_local-specific options
+
+<AccordionGroup>
+  <Accordion title="Automatic installation">
+    By default, `ansible_local` tries to install Ansible if it is not present. Control this with `install` and `install_mode`:
+
+    ```ruby
+    config.vm.provision "ansible_local" do |ansible|
+      ansible.playbook     = "playbook.yml"
+      ansible.install_mode = :pip
+      ansible.version      = "2.15.0"
+    end
+    ```
+
+    | `install_mode` | Behaviour |
+    |----------------|-----------|
+    | `:default` | Installs from the OS package manager. No version selection. |
+    | `:pip` | Installs from PyPI with pip. Supports `version` selection. |
+    | `:pip_args_only` | Installs with pip using only your `pip_args`, no automatic arguments. |
+  </Accordion>
+
+  <Accordion title="Provisioning path">
+    By default, `ansible-playbook` runs from `/vagrant`. Change it with `provisioning_path`:
+
+    ```ruby
+    ansible.provisioning_path = "/vagrant/ansible"
+    ```
+
+    Place an `ansible.cfg` in the `provisioning_path` directory for Ansible configuration that applies to the run.
+  </Accordion>
+</AccordionGroup>
+
+## All common options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `playbook` | string | Path to the playbook file. Required. |
+| `inventory_path` | string | Path to a static inventory file or directory. |
+| `groups` | hash | Group definitions for the auto-generated inventory. |
+| `host_vars` | hash | Per-host variables for the auto-generated inventory. |
+| `extra_vars` | hash or string | Extra variables passed with `-e` to `ansible-playbook`. |
+| `tags` | array | Only run plays and tasks tagged with these values. |
+| `skip_tags` | array | Skip plays and tasks with these tags. |
+| `verbose` | string or boolean | Verbose output level (`"v"`, `"vv"`, `"vvv"`, `"vvvv"`). |
+| `become` | boolean | Run operations with privilege escalation (`--become`). |
+| `become_user` | string | User to become when `become` is true. |
+| `limit` | string | Limit the playbook run to a subset of hosts. |
+| `vault_password_file` | string | Path to the Ansible Vault password file. |
+| `galaxy_role_file` | string | Path to a `requirements.yml` file for `ansible-galaxy`. |
+| `galaxy_roles_path` | string | Path where Galaxy roles are installed. |
+| `config_file` | string | Path to an `ansible.cfg` file. Sets `ANSIBLE_CONFIG`. |
+| `raw_arguments` | array | Raw arguments appended to the `ansible-playbook` command. |
+| `compatibility_mode` | string | Ansible version compatibility mode (`"1.8"`, `"2.0"`, `"auto"`). |
+
+## Parallel execution across multiple machines
+
+You can provision multiple machines in parallel by triggering the provisioner only on the last machine definition:
+
+```ruby
+N = 3
+(1..N).each do |machine_id|
+  config.vm.define "machine#{machine_id}" do |machine|
+    machine.vm.hostname = "machine#{machine_id}"
+    machine.vm.network "private_network", ip: "192.168.77.#{20+machine_id}"
+
+    if machine_id == N
+      machine.vm.provision :ansible do |ansible|
+        ansible.limit    = "all"
+        ansible.playbook = "playbook.yml"
+      end
+    end
+  end
+end
+```
